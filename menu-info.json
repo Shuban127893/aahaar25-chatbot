@@ -1,0 +1,114 @@
+{
+  "restaurant": "AAHAAR25",
+  "menuAvailableTime": "11:15 AM - 2:59 PM",
+  "categories": {
+    "chaatsAfter5PM": [
+      { "name": "Aloo Bonda (2pcs)", "price": "$5.99" },
+      { "name": "Pani Puri (6pcs)", "price": "$9.99" },
+      { "name": "Samosa (2pcs)", "price": "$5.99" },
+      { "name": "Samosa Chaat", "price": "$9.99" },
+      { "name": "Vada Pav", "price": "$8.99" },
+      { "name": "Pav Bhaji (2pcs)", "price": "$9.99" },
+      { "name": "Bhel Puri", "price": "$9.99" },
+      { "name": "Masala Puri", "price": "$9.99" },
+      { "name": "Papdi Chaat (6pcs)", "price": "$9.99" },
+      { "name": "Plantain / Banana Bajji", "price": "$6.99" }
+    ],
+    "appetizers": [
+      { "name": "Aloo Bonda (2pcs)", "price": "$5.99" },
+      { "name": "Chilli Bajji", "price": "$5.99" },
+      { "name": "Gobi Manchurian - Dry", "price": "$12.99" },
+      { "name": "Samosa (2pcs)", "price": "$5.99" },
+      { "name": "Samosa Chaat", "price": "$9.99" },
+      { "name": "Onion Pakora", "price": "$8.99" },
+      { "name": "Chilli Paneer", "price": "$13.99" },
+      { "name": "Vada Pav", "price": "$8.99" },
+      { "name": "Pav Bhaji (2pcs)", "price": "$9.99" },
+      { "name": "Aloo Bajji", "price": "$6.99" },
+      { "name": "Plantain / Banana Bajji", "price": "$6.99" },
+      { "name": "Punugulu", "price": "$5.99" }
+    ],
+    "dessert": [
+      { "name": "Jilebi / Jelebi", "price": "$5.99" },
+      { "name": "Holige / Obbattu (1pcs)", "price": "$3.99" },
+      { "name": "Shrikhand / Srikand", "price": "$4.99" },
+      { "name": "Rasmalai 2pcs", "price": "$4.99" },
+      { "name": "Mysore Pak 1pc", "price": "$2.99" },
+      { "name": "Rose Rasmalai", "price": "$3.99" },
+      { "name": "Fresh Mango Cream", "price": "$3.99" },
+      { "name": "Chocolate Mocha", "price": "$3.99" }
+    ],
+    "curry": [
+      { "name": "Vegetable Sambar 16oz", "price": "$5.99" },
+      { "name": "Rasam 16oz", "price": "$5.99" },
+      { "name": "Tomato Dal 16oz", "price": "$8.99" },
+      { "name": "Choley 16oz", "price": "$11.99" },
+      { "name": "Vegetable Kurma 16oz", "price": "$9.99" }
+    ],
+    "rice": [
+      { "name": "Rasam (16 oz), White Rice and Papad", "price": "$8.99" },
+      { "name": "Pudina Bhath / Mint Rice 16oz", "price": "$9.99" },
+      { "name": "Curd Rice", "price": "$7.99" },
+      { "name": "Sambar (16oz), White Rice and Papad", "price": "$8.99" },
+      { "name": "Ghee Ven Pongal 16oz", "price": "$9.99" }
+    ],
+    "lightMeal": [
+      { "name": "Vada dipped in Sambar 2pcs", "price": "$7.99" },
+      { "name": "Choley Poori 2pcs", "price": "$9.99" },
+      { "name": "Poori Saagu 2pcs", "price": "$9.99" },
+      { "name": "Combo Pongal and Vada (1)", "price": "$11.99" },
+      { "name": "Thatte Idli / Plate Idli", "price": "$7.99" },
+      { "name": "Bonda Soup", "price": "$7.99" },
+      { "name": "Vada 2pcs (Sambar & Chutney on side)", "price": "$7.99" },
+      { "name": "Holige / Obbattu (1pcs)", "price": "$3.99" },
+      { "name": "Thatte Pudi Idli / Plate Pudi Idli", "price": "$7.99" },
+      { "name": "Extra Poori (1pcs)", "price": "$2.99" },
+      { "name": "Ghee Ven Pongal 16oz", "price": "$9.99" },
+      { "name": "Button Idli / Ghee Mini Idlis", "price": "$7.99" },
+      { "name": "Combo Idly (2) Vada (1)", "price": "$10.99" },
+      { "name": "Idli 2pcs", "price": "$7.99" },
+      { "name": "Chole Bhature 2pcs", "price": "$9.99" },
+      { "name": "Combo Idly (1) Vada (1)", "price": "$7.99" }
+    ],
+    "combo": [
+      { "name": "Combo Pongal and Vada (1)", "price": "$11.99" },
+      { "name": "Combo Idly (2) Vada (1)", "price": "$10.99" },
+      { "name": "Combo Idly (1) Vada (1)", "price": "$7.99" }
+    ],
+    "dosa": [
+      { "name": "Cheese Dosa", "price": "$12.99" },
+      { "name": "Masala Dosa", "price": "$11.99" },
+      { "name": "Pudi Dosa", "price": "$12.99" },
+      { "name": "Onion Dosa", "price": "$11.99" },
+      { "name": "Paneer Dosa", "price": "$12.99" },
+      { "name": "Plain Dosa", "price": "$10.99" },
+      { "name": "Mysore Masala Dosa", "price": "$12.99" },
+      { "name": "Set Dosa (2pcs)", "price": "$11.99" }
+    ],
+    "thali": [
+      {
+        "name": "Thali - Limited Meals (Online)",
+        "price": "$15.99",
+        "status": "Out of stock"
+      }
+    ],
+    "snacks": [
+      { "name": "Paneer Corn Puff", "price": "$3.99" },
+      { "name": "Spicy Potato Pinwheels", "price": "$3.99" },
+      { "name": "Puff Pastry Pesto Pizza", "price": "$3.99" }
+    ],
+    "indoChinese": [
+      { "name": "Veg Noodles", "price": "$11.99" }
+    ],
+    "soup": [
+      { "name": "Bonda Soup", "price": "$7.99" }
+    ],
+    "uptownLunchBox": [
+      {
+        "name": "Uptown Lunch Box",
+        "price": "$13.99",
+        "note": "Available only at listed Uptown delivery stops."
+      }
+    ]
+  }
+}

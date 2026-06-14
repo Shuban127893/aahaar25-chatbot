@@ -1,0 +1,128 @@
+{
+  "restaurant": "AAHAAR25",
+  "website": "www.aahaar25.com",
+  "phone": "704-234-8400",
+  "pickupAddress": "4390 Potter Rd, Stallings, NC 28104",
+
+  "price": "$13.99 per box plus applicable taxes",
+
+  "sameDayCutoff": "10:45 AM",
+
+  "paymentRule": "Online or phone confirmation required before dispatch.",
+
+  "deliveryRules": [
+    "Delivery available only to the listed Uptown stops.",
+    "Drivers will wait up to 5 minutes at each stop.",
+    "If the customer is unreachable, the order will be returned for pickup at the Aahaar25 Stallings/Matthews location.",
+    "No refunds for missed deliveries."
+  ],
+
+  "foodPackagingRules": [
+    "Packed fresh and sealed for hygiene.",
+    "Consume within 2 hours of delivery for the best taste.",
+    "Picture is illustrative."
+  ],
+
+  "lunchBoxIncludes": [
+    "Flavoured Rice",
+    "Poori/Chapathi",
+    "Curry",
+    "Curd Rice",
+    "Sweet",
+    "Pickle"
+  ],
+
+  "deliveryStops": [
+
+    {
+      "day": "Tuesday",
+      "location": "Gateway Village",
+      "address": "800 W Trade St",
+      "time": "11:30 AM - 11:45 AM"
+    },
+    {
+      "day": "Tuesday",
+      "location": "Discovery Place",
+      "time": "11:45 AM - 12:00 PM"
+    },
+    {
+      "day": "Tuesday",
+      "location": "Ally Center",
+      "time": "12:00 PM"
+    },
+    {
+      "day": "Tuesday",
+      "location": "One Wells Fargo Center",
+      "time": "12:30 PM"
+    },
+
+    {
+      "day": "Wednesday",
+      "location": "Gateway Village",
+      "address": "800 W Trade St",
+      "time": "11:30 AM - 11:45 AM"
+    },
+    {
+      "day": "Wednesday",
+      "location": "Discovery Place",
+      "time": "11:45 AM - 12:00 PM"
+    },
+    {
+      "day": "Wednesday",
+      "location": "Ally Center",
+      "time": "12:00 PM - 12:15 PM"
+    },
+    {
+      "day": "Wednesday",
+      "location": "One Wells Fargo Center",
+      "time": "12:15 PM - 12:30 PM"
+    },
+
+    {
+      "day": "Thursday",
+      "location": "Gateway Village",
+      "address": "800 W Trade St",
+      "time": "11:30 AM - 11:45 AM"
+    },
+    {
+      "day": "Thursday",
+      "location": "Discovery Place",
+      "time": "11:45 AM - 12:00 PM"
+    },
+    {
+      "day": "Thursday",
+      "location": "Ally Center",
+      "time": "12:00 PM"
+    },
+    {
+      "day": "Thursday",
+      "location": "One Wells Fargo Center",
+      "time": "12:15 PM - 12:30 PM"
+    },
+
+    {
+      "day": "Friday",
+      "location": "Gateway Village",
+      "address": "800 W Trade St",
+      "time": "11:30 AM - 11:45 AM"
+    },
+    {
+      "day": "Friday",
+      "location": "Discovery Place",
+      "time": "11:45 AM - 12:00 PM"
+    },
+    {
+      "day": "Friday",
+      "location": "Ally Center",
+      "time": "12:00 PM"
+    },
+    {
+      "day": "Friday",
+      "location": "One Wells Fargo Center",
+      "time": "12:30 PM"
+    }
+
+  ],
+
+  "unsupportedLocationResponse": "Sorry, AAHAAR25 currently delivers Uptown Lunch Boxes only to the listed Uptown stops. Please choose one of the available stops or call 704-234-8400 for assistance."
+}
