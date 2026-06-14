@@ -263,24 +263,32 @@ app.post("/webhook", async (req, res) => {
 
     const reply = await getChatbotReply(userMessage);
 
-    await fetch(
-      `https://graph.facebook.com/v25.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          to: from,
-          type: "text",
-          text: {
-            body: reply,
-          },
-        }),
-      }
-    );
+   const whatsappResponse = await fetch(
+  `https://graph.facebook.com/v25.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
+  {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: from,
+      type: "text",
+      text: {
+        body: reply,
+      },
+    }),
+  }
+);
+
+const whatsappData = await whatsappResponse.json();
+
+console.log("WhatsApp send status:", whatsappResponse.status);
+console.log(
+  "WhatsApp send response:",
+  JSON.stringify(whatsappData, null, 2)
+);
 
     res.sendStatus(200);
   } catch (error) {
