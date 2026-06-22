@@ -1,8 +1,9 @@
 const express = require("express");
 const cors = require("cors");
+const fs = require("fs");
+const path = require("path");
 require("dotenv").config();
 
-const fs = require("fs");
 const OpenAI = require("openai");
 
 const app = express();
@@ -10,293 +11,236 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
+app.use(express.static("public"));
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const deliveryInfo = JSON.parse(fs.readFileSync("./delivery-info.json", "utf8"));
-const menuInfo = JSON.parse(fs.readFileSync("./menu-info.json", "utf8"));
-const orderLinks = JSON.parse(fs.readFileSync("./order-links.json", "utf8"));
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
+const WHATSAPP_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN;
 
+// --------------------
+// Helper: Send WhatsApp Message
+// --------------------
+async function sendWhatsAppMessage(to, message) {
+  const response = await fetch(
+    `https://graph.facebook.com/v25.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: to,
+        type: "text",
+        text: {
+          body: message,
+        },
+      }),
+    }
+  );
+
+  const data = await response.json();
+  console.log("WhatsApp send status:", response.status);
+  console.log("WhatsApp response:", data);
+
+  return { ok: response.ok, data };
+}
+
+// --------------------
+// Website Health Check
+// --------------------
 app.get("/", (req, res) => {
   res.send("Ahaar25 chatbot backend is running");
 });
 
-function directAnswer(userMessage) {
-  const message = userMessage.toLowerCase();
-
-  const orderStops = {
-    "Gateway Village": "11:30 AM - 11:45 AM",
-    "Discovery Place": "11:45 AM - 12:00 PM",
-    "Ally Center": "12:00 PM",
-    "One Wells Fargo": "12:30 PM",
-  };
-
-  const days = ["Tuesday", "Wednesday", "Thursday", "Friday"];
-  const locations = Object.keys(orderStops);
-
-  const deliveryStopsText =
-    `AAHAAR25 Uptown Lunch Box delivery is available only at these stops:\n\n` +
-    locations.map((location) => `• ${location} — ${orderStops[location]}`).join("\n") +
-    `\n\nAvailable days: Tuesday, Wednesday, Thursday, Friday.\nSame-day order cutoff: ${deliveryInfo.sameDayCutoff}.`;
-
-  const wantsToOrder =
-    message.includes("order") ||
-    message.includes("buy") ||
-    message.includes("checkout") ||
-    message.includes("link");
-
-  const asksForOrderInfo =
-    message.includes("what time") ||
-    message.includes("timing") ||
-    message.includes("times") ||
-    message.includes("locations") ||
-    message.includes("location") ||
-    message.includes("address") ||
-    message.includes("pickup") ||
-    message.includes("stops") ||
-    message.includes("where can i order") ||
-    message.includes("delivery stops") ||
-    message.includes("delivery location");
-
-  const matchedDay = days.find((day) => message.includes(day.toLowerCase()));
-  const matchedLocation = locations.find((location) =>
-    message.includes(location.toLowerCase())
-  );
-
-  if (wantsToOrder || asksForOrderInfo) {
-    if (matchedDay && matchedLocation) {
-      return `You can order the ${matchedDay} Uptown Lunch Box for ${matchedLocation} here:\n${orderLinks[matchedDay][matchedLocation]}\n\nDetails:\n• Stop: ${matchedLocation}\n• Time: ${orderStops[matchedLocation]}\n• Price: ${deliveryInfo.price}\n• Same-day cutoff: ${deliveryInfo.sameDayCutoff}\n• Please order before ${deliveryInfo.sameDayCutoff} for same-day delivery.`;
-    }
-
-    if (matchedDay && !matchedLocation) {
-      return (
-        `For ${matchedDay}, you can order Uptown Lunch Boxes for these stops:\n\n` +
-        locations
-          .map(
-            (location) =>
-              `• ${location} — ${orderStops[location]}\n  Order link: ${orderLinks[matchedDay][location]}`
-          )
-          .join("\n\n")
-      );
-    }
-
-    if (!matchedDay && matchedLocation) {
-      return (
-        `For ${matchedLocation}, Uptown Lunch Box delivery is available on:\n\n` +
-        days
-          .map(
-            (day) =>
-              `• ${day} — ${orderStops[matchedLocation]}\n  Order link: ${orderLinks[day][matchedLocation]}`
-          )
-          .join("\n\n")
-      );
-    }
-
-    return deliveryStopsText;
-  }
-
-  if (
-    message.includes("price") ||
-    message.includes("cost") ||
-    message.includes("how much") ||
-    message.includes("lunch box")
-  ) {
-    return `The Uptown Lunch Box is ${deliveryInfo.price}.`;
-  }
-
-  if (
-    message.includes("phone") ||
-    message.includes("call") ||
-    message.includes("number") ||
-    message.includes("contact")
-  ) {
-    return `You can call AAHAAR25 at ${deliveryInfo.phone}.`;
-  }
-
-  if (
-    message.includes("cutoff") ||
-    message.includes("same day") ||
-    message.includes("order by") ||
-    message.includes("deadline")
-  ) {
-    return `The same-day order cutoff is ${deliveryInfo.sameDayCutoff}.`;
-  }
-
-  if (
-    message.includes("nc state") ||
-    message.includes("raleigh") ||
-    message.includes("durham") ||
-    message.includes("chapel hill")
-  ) {
-    return deliveryInfo.unsupportedLocationResponse;
-  }
-
-  if (message.includes("dessert") || message.includes("sweet")) {
-    const desserts = menuInfo.categories.dessert || [];
-    return "Here are some AAHAAR25 desserts:\n" + desserts.map((item) => `• ${item.name} - ${item.price}`).join("\n");
-  }
-
-  if (message.includes("appetizer") || message.includes("starter")) {
-    const appetizers = menuInfo.categories.appetizers || [];
-    return "Here are some AAHAAR25 appetizers:\n" + appetizers.map((item) => `• ${item.name} - ${item.price}`).join("\n");
-  }
-
-  if (message.includes("dosa")) {
-    const dosas = menuInfo.categories.dosa || [];
-    return "Here are the AAHAAR25 dosa options:\n" + dosas.map((item) => `• ${item.name} - ${item.price}`).join("\n");
-  }
-
-  for (const categoryName in menuInfo.categories) {
-    const category = menuInfo.categories[categoryName];
-
-    for (const item of category) {
-      if (message.includes(item.name.toLowerCase())) {
-        if (item.status) {
-          return `${item.name} is ${item.price}, but it is currently listed as ${item.status}.`;
-        }
-
-        return `${item.name} is ${item.price}.`;
-      }
-    }
-  }
-
-  return null;
-}
-
-async function getChatbotReply(userMessage) {
-  const simpleReply = directAnswer(userMessage);
-
-  if (simpleReply) {
-    return simpleReply;
-  }
-
-  const response = await client.responses.create({
-    model: "gpt-4o-mini",
-    max_output_tokens: 300,
-    input: `
-You are the official AAHAAR25 customer service assistant.
-
-Use ONLY the AAHAAR25 information below.
-
-Main rules:
-- Keep answers friendly, short, and useful.
-- Do not make up delivery stops, menu items, prices, times, addresses, availability, policies, business hours, promotions, ingredients, or order links.
-- If you do not know the answer, do not guess.
-- If the answer is not contained in the AAHAAR25 information provided, politely tell the customer to call 704-234-8400.
-- If the user asks about something unrelated to AAHAAR25, politely say you can only help with AAHAAR25 menu, pricing, delivery, and ordering questions.
-- Do not give a pickup address unless the customer is specifically told to call AAHAAR25.
-
-Delivery rules:
-- If the user asks about a delivery location that is not listed, respond with:
-"${deliveryInfo.unsupportedLocationResponse}"
-
-Ordering rules:
-- If the customer wants to order an Uptown Lunch Box, ask for both the day and the Uptown stop if either is missing.
-- If the day and stop are listed, provide the correct Square checkout link.
-- Remind customers to order before ${deliveryInfo.sameDayCutoff} for same-day delivery.
-
-Menu rules:
-- If the user asks about a menu item that is not listed, say that it is not listed in the current AAHAAR25 menu information and suggest calling 704-234-8400.
-- If a menu item is listed as out of stock, clearly say it is currently out of stock.
-- If the customer asks for the whole menu, summarize by category instead of listing every item unless they ask for a specific category.
-
-AAHAAR25 Delivery Information:
-${JSON.stringify(deliveryInfo, null, 2)}
-
-AAHAAR25 Menu Information:
-${JSON.stringify(menuInfo, null, 2)}
-
-AAHAAR25 Order Links:
-${JSON.stringify(orderLinks, null, 2)}
-
-Customer Question:
-${userMessage}
-`,
-  });
-
-  return response.output_text;
-}
-
+// --------------------
+// Website Chatbot Route
+// --------------------
 app.post("/chat", async (req, res) => {
   try {
     const userMessage = req.body.message;
-    const reply = await getChatbotReply(userMessage);
 
-    res.json({ reply });
+    const response = await client.responses.create({
+      model: "gpt-4o-mini",
+      input: userMessage,
+      max_output_tokens: 300,
+    });
+
+    res.json({
+      reply: response.output_text,
+    });
   } catch (error) {
-    console.error(error);
+    console.error("Chat error:", error);
     res.status(500).json({
-      error: "Something went wrong with the chatbot backend.",
+      reply: "Sorry, something went wrong. Please call AAHAAR25 directly.",
     });
   }
 });
 
+// --------------------
+// Meta Webhook Verification
+// --------------------
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
-  if (mode === "subscribe" && token === process.env.WHATSAPP_VERIFY_TOKEN) {
-    console.log("Webhook verified successfully");
+  if (mode === "subscribe" && token === WHATSAPP_VERIFY_TOKEN) {
+    console.log("Webhook verified");
     res.status(200).send(challenge);
   } else {
     res.sendStatus(403);
   }
 });
 
+// --------------------
+// WhatsApp Incoming Messages
+// --------------------
 app.post("/webhook", async (req, res) => {
   try {
     const body = req.body;
-    const message = body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
 
-    if (!message || message.type !== "text") {
+    const message =
+      body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+
+    if (!message) {
       return res.sendStatus(200);
     }
 
     const from = message.from;
-    const userMessage = message.text.body;
+    const userText = message.text?.body || "";
 
     console.log("WhatsApp message from:", from);
-    console.log("Message:", userMessage);
+    console.log("Message:", userText);
 
-    const reply = await getChatbotReply(userMessage);
+    let botReply = "";
 
-   const whatsappResponse = await fetch(
-  `https://graph.facebook.com/v25.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`,
-  {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      to: from,
-      type: "text",
-      text: {
-        body: reply,
-      },
-    }),
-  }
-);
+    const lower = userText.toLowerCase();
 
-const whatsappData = await whatsappResponse.json();
+    if (lower.includes("price") || lower.includes("cost")) {
+      botReply = "The AAHAAR25 Uptown Lunch Box is $13.99 plus applicable taxes.";
+    } else if (lower.includes("time") || lower.includes("delivery") || lower.includes("spot")) {
+      botReply =
+        "AAHAAR25 Uptown delivery stops are:\n\n" +
+        "• Gateway Village — 11:30 AM - 11:45 AM\n" +
+        "• Discovery Place — 11:45 AM - 12:00 PM\n" +
+        "• Ally Center — 12:00 PM\n" +
+        "• One Wells Fargo Center — 12:30 PM\n\n" +
+        "Delivery is available Tuesday through Friday.";
+    } else if (lower.includes("order")) {
+      botReply =
+        "I can help with Uptown Lunch Box ordering. Please choose one of the listed Uptown delivery stops: Gateway Village, Discovery Place, Ally Center, or One Wells Fargo Center.";
+    } else {
+      const aiResponse = await client.responses.create({
+        model: "gpt-4o-mini",
+        input:
+          "You are the AAHAAR25 restaurant chatbot. Answer only about Uptown Lunch Boxes, delivery stops, pricing, cutoff time, and ordering. Do not invent delivery locations.\n\nCustomer: " +
+          userText,
+        max_output_tokens: 300,
+      });
 
-console.log("WhatsApp send status:", whatsappResponse.status);
-console.log(
-  "WhatsApp send response:",
-  JSON.stringify(whatsappData, null, 2)
-);
+      botReply = aiResponse.output_text;
+    }
+
+    await sendWhatsAppMessage(from, botReply);
 
     res.sendStatus(200);
   } catch (error) {
-    console.error("WhatsApp webhook error:", error);
-    res.sendStatus(200);
+    console.error("Webhook error:", error);
+    res.sendStatus(500);
   }
 });
 
+// --------------------
+// Driver Stop Notification Route
+// --------------------
+app.post("/driver/notify-stop", async (req, res) => {
+  try {
+    const { stop, status } = req.body;
+
+    if (!stop || !status) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing stop or status",
+      });
+    }
+
+    const ordersPath = path.join(__dirname, "orders-today.json");
+
+    if (!fs.existsSync(ordersPath)) {
+      return res.status(404).json({
+        success: false,
+        error: "orders-today.json not found",
+      });
+    }
+
+    const orders = JSON.parse(fs.readFileSync(ordersPath, "utf8"));
+
+    const customersAtStop = orders.filter(
+      (order) => order.stop.toLowerCase() === stop.toLowerCase()
+    );
+
+    if (customersAtStop.length === 0) {
+      return res.json({
+        success: true,
+        sentCount: 0,
+        message: `No customers found for ${stop}`,
+      });
+    }
+
+    let whatsappMessage = "";
+
+    if (status === "10min") {
+      whatsappMessage = `AAHAAR25 Update: Your lunch box driver is about 10 minutes away from ${stop}.`;
+    } else if (status === "5min") {
+      whatsappMessage = `AAHAAR25 Update: Your lunch box driver is about 5 minutes away from ${stop}. Please be ready at the delivery spot.`;
+    } else if (status === "arrived") {
+      whatsappMessage = `AAHAAR25 Update: Your lunch box driver has arrived at ${stop}. Please meet the driver at the delivery spot.`;
+    } else if (status === "delivered") {
+      whatsappMessage = `AAHAAR25 Update: Your lunch box has been delivered. Thank you for ordering from AAHAAR25!`;
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid status",
+      });
+    }
+
+    let sentCount = 0;
+
+    for (const customer of customersAtStop) {
+      if (!customer.phone) continue;
+
+      const result = await sendWhatsAppMessage(customer.phone, whatsappMessage);
+
+      if (result.ok) {
+        sentCount++;
+      }
+    }
+
+    res.json({
+      success: true,
+      stop,
+      status,
+      sentCount,
+      totalCustomers: customersAtStop.length,
+    });
+  } catch (error) {
+    console.error("Driver notification error:", error);
+    res.status(500).json({
+      success: false,
+      error: "Driver notification failed",
+    });
+  }
+});
+
+// --------------------
+// Start Server
+// --------------------
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
