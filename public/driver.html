@@ -14,16 +14,36 @@
       color: #b45309;
     }
 
+    #loginBox {
+      max-width: 420px;
+      margin: 80px auto;
+      background: white;
+      padding: 24px;
+      border-radius: 16px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+      text-align: center;
+    }
+
+    input {
+      width: 90%;
+      padding: 16px;
+      font-size: 20px;
+      border-radius: 10px;
+      border: 1px solid #ccc;
+      margin-bottom: 12px;
+      text-align: center;
+    }
+
+    #driverPanel {
+      display: none;
+    }
+
     .stop-card {
       background: white;
       border-radius: 16px;
       padding: 20px;
       margin: 18px 0;
       box-shadow: 0 8px 20px rgba(0,0,0,0.15);
-    }
-
-    h2 {
-      margin-top: 0;
     }
 
     button {
@@ -38,8 +58,8 @@
       font-weight: bold;
     }
 
-    button:active {
-      transform: scale(0.98);
+    .delivered {
+      background: #16a34a;
     }
 
     .message {
@@ -47,45 +67,76 @@
       font-weight: bold;
       color: green;
     }
+
+    .error {
+      color: red;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
 
-  <h1>AAHAAR25 Driver Panel</h1>
-
-  <div class="stop-card">
-    <h2>Gateway Village</h2>
-    <button onclick="notifyStop('Gateway Village', '10min')">10 Min Away</button>
-    <button onclick="notifyStop('Gateway Village', '5min')">5 Min Away</button>
-    <button onclick="notifyStop('Gateway Village', 'arrived')">Arrived</button>
-    <p class="message" id="Gateway Village-msg"></p>
+  <div id="loginBox">
+    <h1>AAHAAR25 Driver Login</h1>
+    <input id="pinInput" type="password" placeholder="Enter Driver PIN">
+    <button onclick="checkPin()">Unlock Driver Panel</button>
+    <p id="pinError" class="error"></p>
   </div>
 
-  <div class="stop-card">
-    <h2>Discovery Place</h2>
-    <button onclick="notifyStop('Discovery Place', '10min')">10 Min Away</button>
-    <button onclick="notifyStop('Discovery Place', '5min')">5 Min Away</button>
-    <button onclick="notifyStop('Discovery Place', 'arrived')">Arrived</button>
-    <p class="message" id="Discovery Place-msg"></p>
-  </div>
+  <div id="driverPanel">
+    <h1>AAHAAR25 Driver Panel</h1>
 
-  <div class="stop-card">
-    <h2>Ally Center</h2>
-    <button onclick="notifyStop('Ally Center', '10min')">10 Min Away</button>
-    <button onclick="notifyStop('Ally Center', '5min')">5 Min Away</button>
-    <button onclick="notifyStop('Ally Center', 'arrived')">Arrived</button>
-    <p class="message" id="Ally Center-msg"></p>
-  </div>
+    <div class="stop-card">
+      <h2>Gateway Village</h2>
+      <button onclick="notifyStop('Gateway Village', '10min')">10 Min Away</button>
+      <button onclick="notifyStop('Gateway Village', '5min')">5 Min Away</button>
+      <button onclick="notifyStop('Gateway Village', 'arrived')">Arrived</button>
+      <button class="delivered" onclick="notifyStop('Gateway Village', 'delivered')">Delivered</button>
+      <p class="message" id="Gateway Village-msg"></p>
+    </div>
 
-  <div class="stop-card">
-    <h2>One Wells Fargo Center</h2>
-    <button onclick="notifyStop('One Wells Fargo Center', '10min')">10 Min Away</button>
-    <button onclick="notifyStop('One Wells Fargo Center', '5min')">5 Min Away</button>
-    <button onclick="notifyStop('One Wells Fargo Center', 'arrived')">Arrived</button>
-    <p class="message" id="One Wells Fargo Center-msg"></p>
+    <div class="stop-card">
+      <h2>Discovery Place</h2>
+      <button onclick="notifyStop('Discovery Place', '10min')">10 Min Away</button>
+      <button onclick="notifyStop('Discovery Place', '5min')">5 Min Away</button>
+      <button onclick="notifyStop('Discovery Place', 'arrived')">Arrived</button>
+      <button class="delivered" onclick="notifyStop('Discovery Place', 'delivered')">Delivered</button>
+      <p class="message" id="Discovery Place-msg"></p>
+    </div>
+
+    <div class="stop-card">
+      <h2>Ally Center</h2>
+      <button onclick="notifyStop('Ally Center', '10min')">10 Min Away</button>
+      <button onclick="notifyStop('Ally Center', '5min')">5 Min Away</button>
+      <button onclick="notifyStop('Ally Center', 'arrived')">Arrived</button>
+      <button class="delivered" onclick="notifyStop('Ally Center', 'delivered')">Delivered</button>
+      <p class="message" id="Ally Center-msg"></p>
+    </div>
+
+    <div class="stop-card">
+      <h2>One Wells Fargo Center</h2>
+      <button onclick="notifyStop('One Wells Fargo Center', '10min')">10 Min Away</button>
+      <button onclick="notifyStop('One Wells Fargo Center', '5min')">5 Min Away</button>
+      <button onclick="notifyStop('One Wells Fargo Center', 'arrived')">Arrived</button>
+      <button class="delivered" onclick="notifyStop('One Wells Fargo Center', 'delivered')">Delivered</button>
+      <p class="message" id="One Wells Fargo Center-msg"></p>
+    </div>
   </div>
 
   <script>
+    const DRIVER_PIN = "2525";
+
+    function checkPin() {
+      const pin = document.getElementById("pinInput").value;
+
+      if (pin === DRIVER_PIN) {
+        document.getElementById("loginBox").style.display = "none";
+        document.getElementById("driverPanel").style.display = "block";
+      } else {
+        document.getElementById("pinError").textContent = "Wrong PIN. Try again.";
+      }
+    }
+
     async function notifyStop(stop, status) {
       const messageBox = document.getElementById(stop + "-msg");
       messageBox.textContent = "Sending...";
