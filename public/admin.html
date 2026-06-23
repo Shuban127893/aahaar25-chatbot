@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>AAHAAR25 Admin Orders</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #fff7ed; padding: 20px; }
+    h1 { text-align: center; color: #b45309; }
+    .order-card { background: white; padding: 18px; margin: 14px 0; border-radius: 14px; box-shadow: 0 6px 16px rgba(0,0,0,0.12); }
+    button { padding: 14px; width: 100%; font-size: 18px; border: none; border-radius: 10px; background: #16a34a; color: white; font-weight: bold; }
+    .pending { color: #b45309; font-weight: bold; }
+    .confirmed { color: #16a34a; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>AAHAAR25 Orders Admin</h1>
+  <div id="orders">Loading orders...</div>
+
+  <script>
+    async function loadOrders() {
+      const res = await fetch("/admin/orders");
+      const orders = await res.json();
+
+      const box = document.getElementById("orders");
+
+      if (!orders.length) {
+        box.innerHTML = "<p>No orders found.</p>";
+        return;
+      }
+
+      box.innerHTML = orders.map((order, index) => `
+        <div class="order-card">
+          <h2>${order.name}</h2>
+          <p><b>Phone:</b> ${order.phone}</p>
+          <p><b>Day:</b> ${order.day || "Not selected"}</p>
+          <p><b>Stop:</b> ${order.stop}</p>
+          <p><b>Status:</b> <span class="${order.status}">${order.status}</span></p>
+          ${order.status === "pending" ? `<button onclick="confirmOrder(${index})">Confirm Order</button>` : ""}
+        </div>
+      `).join("");
+    }
+
+    async function confirmOrder(index) {
+      await fetch("/admin/confirm-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ index })
+      });
+
+      loadOrders();
+    }
+
+    loadOrders();
+  </script>
+</body>
+</html>
