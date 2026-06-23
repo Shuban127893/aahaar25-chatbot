@@ -238,6 +238,31 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
+    if (lower.includes("status")) {
+      const orders = readJsonFile("orders-today.json", []);
+      const customerOrders = orders.filter((order) => order.phone === from);
+
+      if (customerOrders.length === 0) {
+        await sendWhatsAppMessage(
+          from,
+          "I couldn't find an order connected to this WhatsApp number. To start an order, type: order"
+        );
+        return res.sendStatus(200);
+      }
+
+      const latestOrder = customerOrders[customerOrders.length - 1];
+
+      await sendWhatsAppMessage(
+        from,
+        `AAHAAR25 Order Status\n\n` +
+          `Status: ${latestOrder.status}\n` +
+          `Day: ${latestOrder.day || "Not selected"}\n` +
+          `Stop: ${latestOrder.stop || "Not selected"}`
+      );
+
+      return res.sendStatus(200);
+    }
+
     let botReply = "";
 
     if (lower.includes("price") || lower.includes("cost")) {
@@ -262,7 +287,8 @@ app.post("/webhook", async (req, res) => {
         "• Price\n" +
         "• Delivery stops\n" +
         "• Delivery times\n" +
-        "• Order\n\n" +
+        "• Order\n" +
+        "• Status\n\n" +
         "To start an order, type: order";
     }
 
