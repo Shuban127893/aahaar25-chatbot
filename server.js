@@ -61,19 +61,23 @@ async function sendWhatsAppMessage(to, message) {
 
 function normalizeDay(text) {
   const lower = text.toLowerCase();
+
   if (lower.includes("tuesday") || lower === "tue") return "Tuesday";
   if (lower.includes("wednesday") || lower === "wed") return "Wednesday";
   if (lower.includes("thursday") || lower === "thu") return "Thursday";
   if (lower.includes("friday") || lower === "fri") return "Friday";
+
   return null;
 }
 
 function normalizeStop(text) {
   const lower = text.toLowerCase();
+
   if (lower.includes("gateway")) return "Gateway Village";
   if (lower.includes("discovery")) return "Discovery Place";
   if (lower.includes("ally")) return "Ally Center";
   if (lower.includes("wells") || lower.includes("fargo")) return "One Wells Fargo";
+
   return null;
 }
 
@@ -185,7 +189,11 @@ app.post("/webhook", async (req, res) => {
       session.order.stop = stop;
       session.step = "ask_name";
 
-      await sendWhatsAppMessage(from, "Got it. What name should we put on the order?");
+      await sendWhatsAppMessage(
+        from,
+        "Got it. What name should we put on the order?"
+      );
+
       return res.sendStatus(200);
     }
 
@@ -222,7 +230,8 @@ app.post("/webhook", async (req, res) => {
           `Please complete payment here:\n${paymentLink}\n\n` +
           `Once payment is confirmed, your order will be added to today's confirmed delivery list.`;
       } else {
-        reply += "Payment link was not found for that stop/day. Please call AAHAAR25 for help.";
+        reply +=
+          "Payment link was not found for that stop/day. Please call AAHAAR25 for help.";
       }
 
       await sendWhatsAppMessage(from, reply);
@@ -314,7 +323,9 @@ app.post("/driver/notify-stop", async (req, res) => {
 
     for (const customer of customersAtStop) {
       if (!customer.phone) continue;
+
       const result = await sendWhatsAppMessage(customer.phone, whatsappMessage);
+
       if (result.ok) sentCount++;
     }
 
@@ -345,8 +356,8 @@ app.get("/admin/orders", (req, res) => {
   }
 });
 
-// Admin: confirm pending order
-app.post("/admin/confirm-order", (req, res) => {
+// Admin: confirm pending order and send customer confirmation
+app.post("/admin/confirm-order", async (req, res) => {
   try {
     const { index } = req.body;
     const orders = readJsonFile("orders-today.json", []);
@@ -363,9 +374,21 @@ app.post("/admin/confirm-order", (req, res) => {
 
     writeJsonFile("orders-today.json", orders);
 
+    const order = orders[index];
+
+    const confirmationMessage =
+      `✅ Your AAHAAR25 order has been confirmed.\n\n` +
+      `Day: ${order.day || "Today"}\n` +
+      `Stop: ${order.stop}\n\n` +
+      `You will receive delivery updates on WhatsApp.`;
+
+    if (order.phone) {
+      await sendWhatsAppMessage(order.phone, confirmationMessage);
+    }
+
     res.json({
       success: true,
-      order: orders[index],
+      order,
     });
   } catch (error) {
     console.error("Confirm order error:", error);
