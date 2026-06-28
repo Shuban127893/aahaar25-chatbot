@@ -67,23 +67,32 @@ async function sendMainMenu(to) {
     type: "interactive",
     interactive: {
       type: "button",
+      header: {
+        type: "text",
+        text: "AAHAAR25 🍱",
+      },
       body: {
         text:
-          "Welcome to AAHAAR25!\n\nHow can I help you today?",
+          "👋 Welcome to AAHAAR25!\n\n" +
+          "Fresh Uptown Lunch Boxes delivered Tuesday–Friday.\n\n" +
+          "What would you like to do?",
+      },
+      footer: {
+        text: "Fresh • Hygienic • Delicious",
       },
       action: {
         buttons: [
           {
             type: "reply",
-            reply: { id: "START_ORDER", title: "Order Lunch Box" },
+            reply: { id: "START_ORDER", title: "🛒 Order" },
           },
           {
             type: "reply",
-            reply: { id: "SHOW_DELIVERY", title: "Delivery Info" },
+            reply: { id: "SHOW_DELIVERY", title: "📍 Delivery" },
           },
           {
             type: "reply",
-            reply: { id: "SHOW_PRICE", title: "Price" },
+            reply: { id: "SHOW_PRICE", title: "💲 Price" },
           },
         ],
       },
@@ -98,18 +107,45 @@ async function sendDayList(to) {
     type: "interactive",
     interactive: {
       type: "list",
-      header: { type: "text", text: "AAHAAR25 Lunch Box" },
-      body: { text: "Choose your delivery day:" },
+      header: {
+        type: "text",
+        text: "🛒 Lunch Box Order",
+      },
+      body: {
+        text:
+          "Great choice! 🍱\n\n" +
+          "Step 1 of 3:\n" +
+          "Please choose your delivery day.",
+      },
+      footer: {
+        text: "Available Tuesday–Friday",
+      },
       action: {
         button: "Choose Day",
         sections: [
           {
-            title: "Available Days",
+            title: "Delivery Days",
             rows: [
-              { id: "DAY_Tuesday", title: "Tuesday" },
-              { id: "DAY_Wednesday", title: "Wednesday" },
-              { id: "DAY_Thursday", title: "Thursday" },
-              { id: "DAY_Friday", title: "Friday" },
+              {
+                id: "DAY_Tuesday",
+                title: "Tuesday",
+                description: "Order for Tuesday delivery",
+              },
+              {
+                id: "DAY_Wednesday",
+                title: "Wednesday",
+                description: "Order for Wednesday delivery",
+              },
+              {
+                id: "DAY_Thursday",
+                title: "Thursday",
+                description: "Order for Thursday delivery",
+              },
+              {
+                id: "DAY_Friday",
+                title: "Friday",
+                description: "Order for Friday delivery",
+              },
             ],
           },
         ],
@@ -125,18 +161,44 @@ async function sendStopList(to, day) {
     type: "interactive",
     interactive: {
       type: "list",
-      header: { type: "text", text: day },
-      body: { text: `Choose your delivery stop for ${day}:` },
+      header: {
+        type: "text",
+        text: `📍 ${day} Delivery`,
+      },
+      body: {
+        text:
+          "Step 2 of 3:\n" +
+          "Choose your Uptown delivery stop.",
+      },
+      footer: {
+        text: "Driver waits up to 5 minutes at each stop",
+      },
       action: {
         button: "Choose Stop",
         sections: [
           {
             title: "Uptown Stops",
             rows: [
-              { id: "STOP_Gateway Village", title: "Gateway Village" },
-              { id: "STOP_Discovery Place", title: "Discovery Place" },
-              { id: "STOP_Ally Center", title: "Ally Center" },
-              { id: "STOP_One Wells Fargo", title: "One Wells Fargo" },
+              {
+                id: "STOP_Gateway Village",
+                title: "Gateway Village",
+                description: "11:30 AM - 11:45 AM",
+              },
+              {
+                id: "STOP_Discovery Place",
+                title: "Discovery Place",
+                description: "11:45 AM - 12:00 PM",
+              },
+              {
+                id: "STOP_Ally Center",
+                title: "Ally Center",
+                description: "12:00 PM",
+              },
+              {
+                id: "STOP_One Wells Fargo",
+                title: "One Wells Fargo",
+                description: "12:30 PM",
+              },
             ],
           },
         ],
