@@ -67,33 +67,19 @@ async function sendMainMenu(to) {
     type: "interactive",
     interactive: {
       type: "button",
-      header: {
-        type: "text",
-        text: "AAHAAR25 🍱",
-      },
+      header: { type: "text", text: "AAHAAR25 🍱" },
       body: {
         text:
           "👋 Welcome to AAHAAR25!\n\n" +
           "Fresh Uptown Lunch Boxes delivered Tuesday–Friday.\n\n" +
           "What would you like to do?",
       },
-      footer: {
-        text: "Fresh • Hygienic • Delicious",
-      },
+      footer: { text: "Fresh • Hygienic • Delicious" },
       action: {
         buttons: [
-          {
-            type: "reply",
-            reply: { id: "START_ORDER", title: "🛒 Order" },
-          },
-          {
-            type: "reply",
-            reply: { id: "SHOW_DELIVERY", title: "📍 Delivery" },
-          },
-          {
-            type: "reply",
-            reply: { id: "SHOW_PRICE", title: "💲 Price" },
-          },
+          { type: "reply", reply: { id: "START_ORDER", title: "🛒 Order" } },
+          { type: "reply", reply: { id: "SHOW_DELIVERY", title: "📍 Delivery" } },
+          { type: "reply", reply: { id: "SHOW_PRICE", title: "💲 Price" } },
         ],
       },
     },
@@ -107,45 +93,24 @@ async function sendDayList(to) {
     type: "interactive",
     interactive: {
       type: "list",
-      header: {
-        type: "text",
-        text: "🛒 Lunch Box Order",
-      },
+      header: { type: "text", text: "🛒 Lunch Box Order" },
       body: {
         text:
           "Great choice! 🍱\n\n" +
           "Step 1 of 3:\n" +
           "Please choose your delivery day.",
       },
-      footer: {
-        text: "Available Tuesday–Friday",
-      },
+      footer: { text: "Available Tuesday–Friday" },
       action: {
         button: "Choose Day",
         sections: [
           {
             title: "Delivery Days",
             rows: [
-              {
-                id: "DAY_Tuesday",
-                title: "Tuesday",
-                description: "Order for Tuesday delivery",
-              },
-              {
-                id: "DAY_Wednesday",
-                title: "Wednesday",
-                description: "Order for Wednesday delivery",
-              },
-              {
-                id: "DAY_Thursday",
-                title: "Thursday",
-                description: "Order for Thursday delivery",
-              },
-              {
-                id: "DAY_Friday",
-                title: "Friday",
-                description: "Order for Friday delivery",
-              },
+              { id: "DAY_Tuesday", title: "Tuesday", description: "Order for Tuesday delivery" },
+              { id: "DAY_Wednesday", title: "Wednesday", description: "Order for Wednesday delivery" },
+              { id: "DAY_Thursday", title: "Thursday", description: "Order for Thursday delivery" },
+              { id: "DAY_Friday", title: "Friday", description: "Order for Friday delivery" },
             ],
           },
         ],
@@ -161,44 +126,23 @@ async function sendStopList(to, day) {
     type: "interactive",
     interactive: {
       type: "list",
-      header: {
-        type: "text",
-        text: `📍 ${day} Delivery`,
-      },
+      header: { type: "text", text: `📍 ${day} Delivery` },
       body: {
         text:
           "Step 2 of 3:\n" +
           "Choose your Uptown delivery stop.",
       },
-      footer: {
-        text: "Driver waits up to 5 minutes at each stop",
-      },
+      footer: { text: "Driver waits up to 5 minutes at each stop" },
       action: {
         button: "Choose Stop",
         sections: [
           {
             title: "Uptown Stops",
             rows: [
-              {
-                id: "STOP_Gateway Village",
-                title: "Gateway Village",
-                description: "11:30 AM - 11:45 AM",
-              },
-              {
-                id: "STOP_Discovery Place",
-                title: "Discovery Place",
-                description: "11:45 AM - 12:00 PM",
-              },
-              {
-                id: "STOP_Ally Center",
-                title: "Ally Center",
-                description: "12:00 PM",
-              },
-              {
-                id: "STOP_One Wells Fargo",
-                title: "One Wells Fargo",
-                description: "12:30 PM",
-              },
+              { id: "STOP_Gateway Village", title: "Gateway Village", description: "11:30 AM" },
+              { id: "STOP_Discovery Place", title: "Discovery Place", description: "11:45 AM" },
+              { id: "STOP_Ally Center", title: "Ally Center", description: "12:00 PM" },
+              { id: "STOP_One Wells Fargo", title: "One Wells Fargo", description: "12:30 PM" },
             ],
           },
         ],
@@ -226,9 +170,7 @@ function normalizeStop(text) {
 }
 
 function getIncomingText(message) {
-  if (message.type === "text") {
-    return message.text?.body?.trim() || "";
-  }
+  if (message.type === "text") return message.text?.body?.trim() || "";
 
   if (message.type === "interactive") {
     const buttonReply = message.interactive?.button_reply;
@@ -299,13 +241,7 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    if (
-      lower === "hi" ||
-      lower === "hello" ||
-      lower === "hey" ||
-      lower === "menu" ||
-      lower === "start"
-    ) {
+    if (["hi", "hello", "hey", "menu", "start"].includes(lower)) {
       await sendMainMenu(from);
       return res.sendStatus(200);
     }
@@ -329,8 +265,8 @@ app.post("/webhook", async (req, res) => {
       await sendWhatsAppMessage(
         from,
         "AAHAAR25 Uptown delivery stops are:\n\n" +
-          "• Gateway Village — 11:30 AM - 11:45 AM\n" +
-          "• Discovery Place — 11:45 AM - 12:00 PM\n" +
+          "• Gateway Village — 11:30 AM\n" +
+          "• Discovery Place — 11:45 AM\n" +
           "• Ally Center — 12:00 PM\n" +
           "• One Wells Fargo — 12:30 PM\n\n" +
           "Delivery is available Tuesday through Friday."
@@ -339,11 +275,7 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    if (
-      userText === "START_ORDER" ||
-      lower.includes("order") ||
-      lower.includes("lunch box")
-    ) {
+    if (userText === "START_ORDER" || lower.includes("order") || lower.includes("lunch box")) {
       userSessions[from] = {
         step: "ask_day",
         order: { phone: from, status: "pending" },
@@ -356,11 +288,8 @@ app.post("/webhook", async (req, res) => {
     if (session?.step === "ask_day") {
       let day = null;
 
-      if (userText.startsWith("DAY_")) {
-        day = userText.replace("DAY_", "");
-      } else {
-        day = normalizeDay(userText);
-      }
+      if (userText.startsWith("DAY_")) day = userText.replace("DAY_", "");
+      else day = normalizeDay(userText);
 
       if (!day) {
         await sendDayList(from);
@@ -377,11 +306,8 @@ app.post("/webhook", async (req, res) => {
     if (session?.step === "ask_stop") {
       let stop = null;
 
-      if (userText.startsWith("STOP_")) {
-        stop = userText.replace("STOP_", "");
-      } else {
-        stop = normalizeStop(userText);
-      }
+      if (userText.startsWith("STOP_")) stop = userText.replace("STOP_", "");
+      else stop = normalizeStop(userText);
 
       if (!stop) {
         await sendStopList(from, session.order.day);
@@ -428,8 +354,7 @@ app.post("/webhook", async (req, res) => {
           `Please complete payment here:\n${paymentLink}\n\n` +
           `Once payment is confirmed, your order will be added to today's confirmed delivery list.`;
       } else {
-        reply +=
-          "Payment link was not found for that stop/day. Please call AAHAAR25 for help.";
+        reply += "Payment link was not found for that stop/day. Please call AAHAAR25 for help.";
       }
 
       await sendWhatsAppMessage(from, reply);
@@ -519,7 +444,6 @@ app.post("/driver/notify-stop", async (req, res) => {
 
     for (const customer of customersAtStop) {
       if (!customer.phone) continue;
-
       const result = await sendWhatsAppMessage(customer.phone, whatsappMessage);
       if (result.ok) sentCount++;
     }
@@ -579,10 +503,7 @@ app.post("/admin/confirm-order", async (req, res) => {
       await sendWhatsAppMessage(order.phone, confirmationMessage);
     }
 
-    res.json({
-      success: true,
-      order,
-    });
+    res.json({ success: true, order });
   } catch (error) {
     console.error("Confirm order error:", error);
     res.status(500).json({ success: false });
