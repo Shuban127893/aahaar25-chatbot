@@ -13,9 +13,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static("public"));
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -34,7 +32,7 @@ function writeJsonFile(fileName, data) {
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 }
 
-async function sendWhatsAppMessage(to, message) {
+async function sendWhatsAppPayload(payload) {
   const response = await fetch(
     `https://graph.facebook.com/v25.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`,
     {
@@ -43,42 +41,142 @@ async function sendWhatsAppMessage(to, message) {
         Authorization: `Bearer ${WHATSAPP_TOKEN}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        to,
-        type: "text",
-        text: { body: message },
-      }),
+      body: JSON.stringify(payload),
     }
   );
 
   const data = await response.json();
   console.log("WhatsApp send status:", response.status);
   console.log("WhatsApp response:", data);
-
   return { ok: response.ok, data };
+}
+
+async function sendWhatsAppMessage(to, message) {
+  return sendWhatsAppPayload({
+    messaging_product: "whatsapp",
+    to,
+    type: "text",
+    text: { body: message },
+  });
+}
+
+async function sendMainMenu(to) {
+  return sendWhatsAppPayload({
+    messaging_product: "whatsapp",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: {
+        text:
+          "Welcome to AAHAAR25!\n\nHow can I help you today?",
+      },
+      action: {
+        buttons: [
+          {
+            type: "reply",
+            reply: { id: "START_ORDER", title: "Order Lunch Box" },
+          },
+          {
+            type: "reply",
+            reply: { id: "SHOW_DELIVERY", title: "Delivery Info" },
+          },
+          {
+            type: "reply",
+            reply: { id: "SHOW_PRICE", title: "Price" },
+          },
+        ],
+      },
+    },
+  });
+}
+
+async function sendDayList(to) {
+  return sendWhatsAppPayload({
+    messaging_product: "whatsapp",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "list",
+      header: { type: "text", text: "AAHAAR25 Lunch Box" },
+      body: { text: "Choose your delivery day:" },
+      action: {
+        button: "Choose Day",
+        sections: [
+          {
+            title: "Available Days",
+            rows: [
+              { id: "DAY_Tuesday", title: "Tuesday" },
+              { id: "DAY_Wednesday", title: "Wednesday" },
+              { id: "DAY_Thursday", title: "Thursday" },
+              { id: "DAY_Friday", title: "Friday" },
+            ],
+          },
+        ],
+      },
+    },
+  });
+}
+
+async function sendStopList(to, day) {
+  return sendWhatsAppPayload({
+    messaging_product: "whatsapp",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "list",
+      header: { type: "text", text: day },
+      body: { text: `Choose your delivery stop for ${day}:` },
+      action: {
+        button: "Choose Stop",
+        sections: [
+          {
+            title: "Uptown Stops",
+            rows: [
+              { id: "STOP_Gateway Village", title: "Gateway Village" },
+              { id: "STOP_Discovery Place", title: "Discovery Place" },
+              { id: "STOP_Ally Center", title: "Ally Center" },
+              { id: "STOP_One Wells Fargo", title: "One Wells Fargo" },
+            ],
+          },
+        ],
+      },
+    },
+  });
 }
 
 function normalizeDay(text) {
   const lower = text.toLowerCase();
-
   if (lower.includes("tuesday") || lower === "tue") return "Tuesday";
   if (lower.includes("wednesday") || lower === "wed") return "Wednesday";
   if (lower.includes("thursday") || lower === "thu") return "Thursday";
   if (lower.includes("friday") || lower === "fri") return "Friday";
-
   return null;
 }
 
 function normalizeStop(text) {
   const lower = text.toLowerCase();
-
   if (lower.includes("gateway")) return "Gateway Village";
   if (lower.includes("discovery")) return "Discovery Place";
   if (lower.includes("ally")) return "Ally Center";
   if (lower.includes("wells") || lower.includes("fargo")) return "One Wells Fargo";
-
   return null;
+}
+
+function getIncomingText(message) {
+  if (message.type === "text") {
+    return message.text?.body?.trim() || "";
+  }
+
+  if (message.type === "interactive") {
+    const buttonReply = message.interactive?.button_reply;
+    const listReply = message.interactive?.list_reply;
+
+    if (buttonReply) return buttonReply.id || buttonReply.title || "";
+    if (listReply) return listReply.id || listReply.title || "";
+  }
+
+  return "";
 }
 
 app.get("/", (req, res) => {
@@ -125,7 +223,7 @@ app.post("/webhook", async (req, res) => {
     if (!message) return res.sendStatus(200);
 
     const from = message.from;
-    const userText = message.text?.body?.trim() || "";
+    const userText = getIncomingText(message);
     const lower = userText.toLowerCase();
 
     console.log("WhatsApp message from:", from);
@@ -139,61 +237,99 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    if (lower.includes("order") || lower.includes("lunch box")) {
+    if (
+      lower === "hi" ||
+      lower === "hello" ||
+      lower === "hey" ||
+      lower === "menu" ||
+      lower === "start"
+    ) {
+      await sendMainMenu(from);
+      return res.sendStatus(200);
+    }
+
+    if (userText === "SHOW_PRICE" || lower.includes("price") || lower.includes("cost")) {
+      await sendWhatsAppMessage(
+        from,
+        "The AAHAAR25 Uptown Lunch Box is $13.99 plus applicable taxes."
+      );
+      await sendMainMenu(from);
+      return res.sendStatus(200);
+    }
+
+    if (
+      userText === "SHOW_DELIVERY" ||
+      lower.includes("time") ||
+      lower.includes("delivery") ||
+      lower.includes("spot") ||
+      lower.includes("location")
+    ) {
+      await sendWhatsAppMessage(
+        from,
+        "AAHAAR25 Uptown delivery stops are:\n\n" +
+          "• Gateway Village — 11:30 AM - 11:45 AM\n" +
+          "• Discovery Place — 11:45 AM - 12:00 PM\n" +
+          "• Ally Center — 12:00 PM\n" +
+          "• One Wells Fargo — 12:30 PM\n\n" +
+          "Delivery is available Tuesday through Friday."
+      );
+      await sendMainMenu(from);
+      return res.sendStatus(200);
+    }
+
+    if (
+      userText === "START_ORDER" ||
+      lower.includes("order") ||
+      lower.includes("lunch box")
+    ) {
       userSessions[from] = {
         step: "ask_day",
         order: { phone: from, status: "pending" },
       };
 
-      await sendWhatsAppMessage(
-        from,
-        "Great! What day would you like to order for?\n\nAvailable days:\n• Tuesday\n• Wednesday\n• Thursday\n• Friday\n\nYou can type cancel anytime."
-      );
-
+      await sendDayList(from);
       return res.sendStatus(200);
     }
 
     if (session?.step === "ask_day") {
-      const day = normalizeDay(userText);
+      let day = null;
+
+      if (userText.startsWith("DAY_")) {
+        day = userText.replace("DAY_", "");
+      } else {
+        day = normalizeDay(userText);
+      }
 
       if (!day) {
-        await sendWhatsAppMessage(
-          from,
-          "Please choose one of these days:\nTuesday, Wednesday, Thursday, or Friday."
-        );
+        await sendDayList(from);
         return res.sendStatus(200);
       }
 
       session.order.day = day;
       session.step = "ask_stop";
 
-      await sendWhatsAppMessage(
-        from,
-        `Perfect. Which delivery stop for ${day}?\n\n• Gateway Village\n• Discovery Place\n• Ally Center\n• One Wells Fargo`
-      );
-
+      await sendStopList(from, day);
       return res.sendStatus(200);
     }
 
     if (session?.step === "ask_stop") {
-      const stop = normalizeStop(userText);
+      let stop = null;
+
+      if (userText.startsWith("STOP_")) {
+        stop = userText.replace("STOP_", "");
+      } else {
+        stop = normalizeStop(userText);
+      }
 
       if (!stop) {
-        await sendWhatsAppMessage(
-          from,
-          "Please choose one of these stops:\nGateway Village, Discovery Place, Ally Center, or One Wells Fargo."
-        );
+        await sendStopList(from, session.order.day);
         return res.sendStatus(200);
       }
 
       session.order.stop = stop;
       session.step = "ask_name";
 
-      await sendWhatsAppMessage(
-        from,
-        "Got it. What name should we put on the order?"
-      );
-
+      await sendWhatsAppMessage(from, "Got it. What name should we put on the order?");
       return res.sendStatus(200);
     }
 
@@ -245,8 +381,9 @@ app.post("/webhook", async (req, res) => {
       if (customerOrders.length === 0) {
         await sendWhatsAppMessage(
           from,
-          "I couldn't find an order connected to this WhatsApp number. To start an order, type: order"
+          "I couldn't find an order connected to this WhatsApp number. To start an order, tap Order Lunch Box below."
         );
+        await sendMainMenu(from);
         return res.sendStatus(200);
       }
 
@@ -263,36 +400,7 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    let botReply = "";
-
-    if (lower.includes("price") || lower.includes("cost")) {
-      botReply = "The AAHAAR25 Uptown Lunch Box is $13.99 plus applicable taxes.";
-    } else if (
-      lower.includes("time") ||
-      lower.includes("delivery") ||
-      lower.includes("spot") ||
-      lower.includes("location")
-    ) {
-      botReply =
-        "AAHAAR25 Uptown delivery stops are:\n\n" +
-        "• Gateway Village — 11:30 AM - 11:45 AM\n" +
-        "• Discovery Place — 11:45 AM - 12:00 PM\n" +
-        "• Ally Center — 12:00 PM\n" +
-        "• One Wells Fargo — 12:30 PM\n\n" +
-        "Delivery is available Tuesday through Friday.";
-    } else {
-      botReply =
-        "Hi! I can help with AAHAAR25 Uptown Lunch Box orders.\n\n" +
-        "You can ask about:\n" +
-        "• Price\n" +
-        "• Delivery stops\n" +
-        "• Delivery times\n" +
-        "• Order\n" +
-        "• Status\n\n" +
-        "To start an order, type: order";
-    }
-
-    await sendWhatsAppMessage(from, botReply);
+    await sendMainMenu(from);
     res.sendStatus(200);
   } catch (error) {
     console.error("Webhook error:", error);
@@ -351,7 +459,6 @@ app.post("/driver/notify-stop", async (req, res) => {
       if (!customer.phone) continue;
 
       const result = await sendWhatsAppMessage(customer.phone, whatsappMessage);
-
       if (result.ok) sentCount++;
     }
 
@@ -371,7 +478,6 @@ app.post("/driver/notify-stop", async (req, res) => {
   }
 });
 
-// Admin: view all orders
 app.get("/admin/orders", (req, res) => {
   try {
     const orders = readJsonFile("orders-today.json", []);
@@ -382,7 +488,6 @@ app.get("/admin/orders", (req, res) => {
   }
 });
 
-// Admin: confirm pending order and send customer confirmation
 app.post("/admin/confirm-order", async (req, res) => {
   try {
     const { index } = req.body;
