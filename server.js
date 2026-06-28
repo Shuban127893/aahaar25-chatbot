@@ -2,12 +2,16 @@ const express = require("express");
 const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 require("dotenv").config();
 
 const OpenAI = require("openai");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// IMPORTANT: raw body must come before express.json for Square webhook verification
+app.use("/square-webhook", express.raw({ type: "application/json" }));
 
 app.use(cors());
 app.use(express.json());
@@ -18,6 +22,19 @@ const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
 const WHATSAPP_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN;
+
+const SQUARE_ACCESS_TOKEN = process.env.SQUARE_ACCESS_TOKEN;
+const SQUARE_LOCATION_ID = process.env.SQUARE_LOCATION_ID;
+const SQUARE_WEBHOOK_SIGNATURE_KEY = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY;
+const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "sandbox";
+
+const SQUARE_BASE_URL =
+  SQUARE_ENVIRONMENT === "production"
+    ? "https://connect.squareup.com"
+    : "https://connect.squareupsandbox.com";
+
+const SQUARE_WEBHOOK_URL =
+  "https://aahaar25-chatbot-production.up.railway.app/square-webhook";
 
 const userSessions = {};
 
@@ -30,6 +47,89 @@ function readJsonFile(fileName, fallback) {
 function writeJsonFile(fileName, data) {
   const filePath = path.join(__dirname, fileName);
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+}
+
+function generateOrderId() {
+  return "AAH-" + Date.now() + "-" + Math.floor(Math.random() * 10000);
+}
+
+async function squareRequest(endpoint, method = "GET", body = null) {
+  const response = await fetch(`${SQUARE_BASE_URL}${endpoint}`, {
+    method,
+    headers: {
+      "Square-Version": "2026-05-20",
+      Authorization: `Bearer ${SQUARE_ACCESS_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    console.error("Square API error:", data);
+    throw new Error("Square API request failed");
+  }
+
+  return data;
+}
+
+async function createSquarePaymentLink(order) {
+  const body = {
+    idempotency_key: order.orderId,
+    description: `AAHAAR25 Lunch Box - ${order.name}`,
+    order: {
+      location_id: SQUARE_LOCATION_ID,
+      reference_id: order.orderId,
+      metadata: {
+        orderId: order.orderId,
+        customerName: order.name,
+        phone: order.phone,
+        day: order.day,
+        stop: order.stop,
+      },
+      line_items: [
+        {
+          name: `AAHAAR25 Lunch Box - ${order.stop}`,
+          quantity: "1",
+          base_price_money: {
+            amount: 1399,
+            currency: "USD",
+          },
+        },
+      ],
+    },
+    checkout_options: {
+      allow_tipping: false,
+      redirect_url: "https://aahaar25-chatbot-production.up.railway.app",
+    },
+    payment_note: `AAHAAR25 order ${order.orderId}`,
+  };
+
+  const data = await squareRequest(
+    "/v2/online-checkout/payment-links",
+    "POST",
+    body
+  );
+
+  return {
+    url: data.payment_link?.url,
+    paymentLinkId: data.payment_link?.id,
+    squareOrderId: data.payment_link?.order_id,
+  };
+}
+
+function verifySquareSignature(rawBody, signatureHeader) {
+  if (!SQUARE_WEBHOOK_SIGNATURE_KEY || !signatureHeader) return false;
+
+  const hmac = crypto.createHmac("sha256", SQUARE_WEBHOOK_SIGNATURE_KEY);
+  hmac.update(SQUARE_WEBHOOK_URL + rawBody.toString("utf8"));
+  const digest = hmac.digest("base64");
+
+  return crypto.timingSafeEqual(
+    Buffer.from(digest),
+    Buffer.from(signatureHeader)
+  );
 }
 
 async function sendWhatsAppPayload(payload) {
@@ -128,9 +228,7 @@ async function sendStopList(to, day) {
       type: "list",
       header: { type: "text", text: `📍 ${day} Delivery` },
       body: {
-        text:
-          "Step 2 of 3:\n" +
-          "Choose your Uptown delivery stop.",
+        text: "Step 2 of 3:\nChoose your Uptown delivery stop.",
       },
       footer: { text: "Driver waits up to 5 minutes at each stop" },
       action: {
@@ -185,6 +283,90 @@ function getIncomingText(message) {
 
 app.get("/", (req, res) => {
   res.send("Ahaar25 chatbot backend is running");
+});
+
+app.post("/square-webhook", async (req, res) => {
+  try {
+    const rawBody = req.body;
+    const signature = req.headers["x-square-hmacsha256-signature"];
+
+    const isValid = verifySquareSignature(rawBody, signature);
+
+    if (!isValid) {
+      console.warn("Invalid Square webhook signature");
+      return res.sendStatus(401);
+    }
+
+    const event = JSON.parse(rawBody.toString("utf8"));
+
+    console.log("Square webhook received:", event.type);
+
+    if (event.type !== "payment.updated" && event.type !== "payment.created") {
+      return res.sendStatus(200);
+    }
+
+    const payment = event.data?.object?.payment;
+
+    if (!payment) return res.sendStatus(200);
+
+    console.log("Square payment status:", payment.status);
+    console.log("Square order ID:", payment.order_id);
+
+    if (payment.status !== "COMPLETED") {
+      return res.sendStatus(200);
+    }
+
+    const orders = readJsonFile("orders-today.json", []);
+
+    let orderIndex = orders.findIndex(
+      (order) =>
+        order.squareOrderId === payment.order_id ||
+        order.squarePaymentId === payment.id
+    );
+
+    if (orderIndex === -1 && payment.order_id) {
+      const squareOrderData = await squareRequest(`/v2/orders/${payment.order_id}`);
+      const referenceId = squareOrderData.order?.reference_id;
+
+      orderIndex = orders.findIndex((order) => order.orderId === referenceId);
+    }
+
+    if (orderIndex === -1) {
+      console.warn("No matching local order found for Square payment.");
+      return res.sendStatus(200);
+    }
+
+    if (orders[orderIndex].status === "confirmed") {
+      return res.sendStatus(200);
+    }
+
+    orders[orderIndex].status = "confirmed";
+    orders[orderIndex].confirmedAt = new Date().toISOString();
+    orders[orderIndex].squarePaymentId = payment.id;
+    orders[orderIndex].squareReceiptUrl = payment.receipt_url || "";
+
+    writeJsonFile("orders-today.json", orders);
+
+    const order = orders[orderIndex];
+
+    const confirmationMessage =
+      `✅ Your AAHAAR25 order has been automatically confirmed.\n\n` +
+      `Name: ${order.name}\n` +
+      `Day: ${order.day}\n` +
+      `Stop: ${order.stop}\n\n` +
+      `You will receive delivery updates on WhatsApp.`;
+
+    if (order.phone) {
+      await sendWhatsAppMessage(order.phone, confirmationMessage);
+    }
+
+    console.log("Order automatically confirmed:", order.orderId);
+
+    res.sendStatus(200);
+  } catch (error) {
+    console.error("Square webhook error:", error);
+    res.sendStatus(500);
+  }
 });
 
 app.post("/chat", async (req, res) => {
@@ -325,12 +507,10 @@ app.post("/webhook", async (req, res) => {
       const name = userText;
       session.order.name = name;
 
-      const orderLinks = readJsonFile("order-links.json", {});
-      const paymentLink = orderLinks?.[session.order.day]?.[session.order.stop];
-
       const orders = readJsonFile("orders-today.json", []);
 
       const newOrder = {
+        orderId: generateOrderId(),
         name: session.order.name,
         phone: session.order.phone,
         day: session.order.day,
@@ -338,6 +518,16 @@ app.post("/webhook", async (req, res) => {
         status: "pending",
         createdAt: new Date().toISOString(),
       };
+
+      try {
+        const squareLink = await createSquarePaymentLink(newOrder);
+
+        newOrder.squarePaymentLink = squareLink.url;
+        newOrder.squarePaymentLinkId = squareLink.paymentLinkId;
+        newOrder.squareOrderId = squareLink.squareOrderId;
+      } catch (squareError) {
+        console.error("Could not create Square payment link:", squareError);
+      }
 
       orders.push(newOrder);
       writeJsonFile("orders-today.json", orders);
@@ -349,12 +539,13 @@ app.post("/webhook", async (req, res) => {
         `Day: ${newOrder.day}\n` +
         `Stop: ${newOrder.stop}\n\n`;
 
-      if (paymentLink) {
+      if (newOrder.squarePaymentLink) {
         reply +=
-          `Please complete payment here:\n${paymentLink}\n\n` +
-          `Once payment is confirmed, your order will be added to today's confirmed delivery list.`;
+          `Please complete payment here:\n${newOrder.squarePaymentLink}\n\n` +
+          `After payment, your order should confirm automatically.`;
       } else {
-        reply += "Payment link was not found for that stop/day. Please call AAHAAR25 for help.";
+        reply +=
+          "The payment link could not be created. Please call AAHAAR25 for help.";
       }
 
       await sendWhatsAppMessage(from, reply);
