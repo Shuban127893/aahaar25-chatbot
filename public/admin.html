@@ -1,25 +1,115 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>AAHAAR25 Admin Orders</title>
+  <title>AAHAAR25 Admin</title>
   <style>
     body { font-family: Arial, sans-serif; background: #fff7ed; padding: 20px; }
-    h1 { text-align: center; color: #b45309; }
-    .order-card { background: white; padding: 18px; margin: 14px 0; border-radius: 14px; box-shadow: 0 6px 16px rgba(0,0,0,0.12); }
-    button { padding: 14px; width: 100%; font-size: 18px; border: none; border-radius: 10px; background: #16a34a; color: white; font-weight: bold; }
+    h1, h2 { text-align: center; color: #b45309; }
+    .box, .order-card, .driver-card { background: white; padding: 18px; margin: 14px 0; border-radius: 14px; box-shadow: 0 6px 16px rgba(0,0,0,0.12); }
+    input { width: 100%; padding: 12px; margin: 6px 0; font-size: 16px; border-radius: 8px; border: 1px solid #ddd; box-sizing: border-box; }
+    button { padding: 12px; width: 100%; font-size: 16px; border: none; border-radius: 10px; background: #16a34a; color: white; font-weight: bold; margin-top: 8px; }
+    .orange { background: #f97316; }
+    .red { background: #dc2626; }
     .pending { color: #b45309; font-weight: bold; }
     .confirmed { color: #16a34a; font-weight: bold; }
+    .delivered { color: #2563eb; font-weight: bold; }
+    .tabs { display: flex; gap: 10px; margin-bottom: 18px; }
+    .tabs button { background: #b45309; }
+    #adminPanel { display: none; }
+    #loginBox { max-width: 420px; margin: 80px auto; }
+    .small { color: #666; font-size: 13px; }
   </style>
 </head>
 <body>
-  <h1>AAHAAR25 Orders Admin</h1>
-  <div id="orders">Loading orders...</div>
+  <div id="loginBox" class="box">
+    <h1>AAHAAR25 Admin Login</h1>
+    <input id="adminPassword" type="password" placeholder="Admin password">
+    <button onclick="adminLogin()">Login</button>
+    <p id="loginMsg"></p>
+  </div>
+
+  <div id="adminPanel">
+    <h1>AAHAAR25 Admin</h1>
+
+    <div class="tabs">
+      <button onclick="showTab('ordersTab')">Orders</button>
+      <button onclick="showTab('driversTab')">Drivers</button>
+      <button onclick="showTab('activityTab')">Driver Activity</button>
+      <button class="red" onclick="logout()">Logout</button>
+    </div>
+
+    <div id="ordersTab">
+      <h2>Orders</h2>
+      <div id="orders">Loading orders...</div>
+    </div>
+
+    <div id="driversTab" style="display:none;">
+      <h2>Add Driver</h2>
+      <div class="box">
+        <input id="driverName" placeholder="Driver name">
+        <input id="driverPhone" placeholder="Driver phone (optional)">
+        <input id="driverPassword" placeholder="Driver password or PIN" type="password">
+        <button onclick="addDriver()">Add Driver</button>
+        <p id="driverMsg"></p>
+      </div>
+
+      <h2>Drivers</h2>
+      <div id="drivers">Loading drivers...</div>
+    </div>
+
+    <div id="activityTab" style="display:none;">
+      <h2>Driver Activity</h2>
+      <div id="activity">Loading activity...</div>
+    </div>
+  </div>
 
   <script>
+    function showTab(tabId) {
+      document.getElementById("ordersTab").style.display = "none";
+      document.getElementById("driversTab").style.display = "none";
+      document.getElementById("activityTab").style.display = "none";
+      document.getElementById(tabId).style.display = "block";
+
+      if (tabId === "ordersTab") loadOrders();
+      if (tabId === "driversTab") loadDrivers();
+      if (tabId === "activityTab") loadActivity();
+    }
+
+    async function adminLogin() {
+      const password = document.getElementById("adminPassword").value;
+
+      const res = await fetch("/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password })
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        document.getElementById("loginBox").style.display = "none";
+        document.getElementById("adminPanel").style.display = "block";
+        loadOrders();
+      } else {
+        document.getElementById("loginMsg").textContent = "Wrong admin password.";
+      }
+    }
+
+    async function logout() {
+      await fetch("/admin/logout", { method: "POST" });
+      location.href = "/admin-login";
+    }
+
     async function loadOrders() {
       const res = await fetch("/admin/orders");
-      const orders = await res.json();
 
+      if (res.status === 401) {
+        document.getElementById("loginBox").style.display = "block";
+        document.getElementById("adminPanel").style.display = "none";
+        return;
+      }
+
+      const orders = await res.json();
       const box = document.getElementById("orders");
 
       if (!orders.length) {
@@ -29,27 +119,115 @@
 
       box.innerHTML = orders.map((order, index) => `
         <div class="order-card">
-          <h2>${order.name}</h2>
-          <p><b>Phone:</b> ${order.phone}</p>
-          <p><b>Day:</b> ${order.day || "Not selected"}</p>
-          <p><b>Stop:</b> ${order.stop}</p>
-          <p><b>Status:</b> <span class="${order.status}">${order.status}</span></p>
-          ${order.status === "pending" ? `<button onclick="confirmOrder(${index})">Confirm Order</button>` : ""}
+          <h2>${escapeHtml(order.name)}</h2>
+          <p><b>Phone:</b> ${escapeHtml(order.phone || "")}</p>
+          <p><b>Day:</b> ${escapeHtml(order.day || "Not selected")}</p>
+          <p><b>Stop:</b> ${escapeHtml(order.stop || "")}</p>
+          <p><b>Status:</b> <span class="${escapeHtml(order.status)}">${escapeHtml(order.status)}</span></p>
+          <p class="small"><b>Order ID:</b> ${escapeHtml(order.order_id || "")}</p>
+          ${order.status === "pending" ? `<button onclick="confirmOrder('${order.order_id}')">Confirm Order Manually</button>` : ""}
         </div>
       `).join("");
     }
 
-    async function confirmOrder(index) {
+    async function confirmOrder(orderId) {
       await fetch("/admin/confirm-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ index })
+        body: JSON.stringify({ orderId })
       });
 
       loadOrders();
     }
 
-    loadOrders();
+    async function addDriver() {
+      const name = document.getElementById("driverName").value;
+      const phone = document.getElementById("driverPhone").value;
+      const password = document.getElementById("driverPassword").value;
+
+      const res = await fetch("/admin/drivers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, phone, password })
+      });
+
+      const data = await res.json();
+
+      document.getElementById("driverMsg").textContent = data.success
+        ? "Driver added."
+        : "Could not add driver.";
+
+      if (data.success) {
+        document.getElementById("driverName").value = "";
+        document.getElementById("driverPhone").value = "";
+        document.getElementById("driverPassword").value = "";
+        loadDrivers();
+      }
+    }
+
+    async function loadDrivers() {
+      const res = await fetch("/admin/drivers");
+      const drivers = await res.json();
+      const box = document.getElementById("drivers");
+
+      if (!drivers.length) {
+        box.innerHTML = "<p>No drivers found.</p>";
+        return;
+      }
+
+      box.innerHTML = drivers.map(driver => `
+        <div class="driver-card">
+          <h2>${escapeHtml(driver.name)}</h2>
+          <p><b>Phone:</b> ${escapeHtml(driver.phone || "")}</p>
+          <p><b>Active:</b> ${driver.is_active ? "Yes" : "No"}</p>
+          <p class="small"><b>Last login:</b> ${driver.last_login ? new Date(driver.last_login).toLocaleString() : "Never"}</p>
+          ${driver.is_active ? `<button class="red" onclick="deactivateDriver(${driver.id})">Deactivate Driver</button>` : ""}
+        </div>
+      `).join("");
+    }
+
+    async function deactivateDriver(driverId) {
+      await fetch("/admin/drivers/deactivate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ driverId })
+      });
+
+      loadDrivers();
+    }
+
+    async function loadActivity() {
+      const res = await fetch("/admin/driver-activity");
+      const activity = await res.json();
+      const box = document.getElementById("activity");
+
+      if (!activity.length) {
+        box.innerHTML = "<p>No driver activity yet.</p>";
+        return;
+      }
+
+      box.innerHTML = activity.map(item => `
+        <div class="box">
+          <p><b>${escapeHtml(item.driver_name || "Unknown driver")}</b> sent <b>${escapeHtml(item.status || "")}</b> update to <b>${escapeHtml(item.stop || "")}</b>.</p>
+          <p>Sent to ${item.sent_count} customer(s).</p>
+          <p class="small">${new Date(item.created_at).toLocaleString()}</p>
+        </div>
+      `).join("");
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    loadOrders().then(() => {
+      document.getElementById("loginBox").style.display = "none";
+      document.getElementById("adminPanel").style.display = "block";
+    }).catch(() => {});
   </script>
 </body>
 </html>

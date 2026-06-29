@@ -3,88 +3,32 @@
 <head>
   <title>AAHAAR25 Driver Panel</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #fff7ed;
-      padding: 20px;
-    }
-
-    h1 {
-      text-align: center;
-      color: #b45309;
-    }
-
-    #loginBox {
-      max-width: 420px;
-      margin: 80px auto;
-      background: white;
-      padding: 24px;
-      border-radius: 16px;
-      box-shadow: 0 8px 20px rgba(0,0,0,0.15);
-      text-align: center;
-    }
-
-    input {
-      width: 90%;
-      padding: 16px;
-      font-size: 20px;
-      border-radius: 10px;
-      border: 1px solid #ccc;
-      margin-bottom: 12px;
-      text-align: center;
-    }
-
-    #driverPanel {
-      display: none;
-    }
-
-    .stop-card {
-      background: white;
-      border-radius: 16px;
-      padding: 20px;
-      margin: 18px 0;
-      box-shadow: 0 8px 20px rgba(0,0,0,0.15);
-    }
-
-    button {
-      width: 100%;
-      padding: 18px;
-      margin: 8px 0;
-      font-size: 20px;
-      border: none;
-      border-radius: 12px;
-      background: #f97316;
-      color: white;
-      font-weight: bold;
-    }
-
-    .delivered {
-      background: #16a34a;
-    }
-
-    .message {
-      margin-top: 10px;
-      font-weight: bold;
-      color: green;
-    }
-
-    .error {
-      color: red;
-      font-weight: bold;
-    }
+    body { font-family: Arial, sans-serif; background: #fff7ed; padding: 20px; }
+    h1 { text-align: center; color: #b45309; }
+    #loginBox { max-width: 420px; margin: 80px auto; background: white; padding: 24px; border-radius: 16px; box-shadow: 0 8px 20px rgba(0,0,0,0.15); text-align: center; }
+    input { width: 90%; padding: 16px; font-size: 20px; border-radius: 10px; border: 1px solid #ccc; margin-bottom: 12px; text-align: center; }
+    #driverPanel { display: none; }
+    .stop-card { background: white; border-radius: 16px; padding: 20px; margin: 18px 0; box-shadow: 0 8px 20px rgba(0,0,0,0.15); }
+    button { width: 100%; padding: 18px; margin: 8px 0; font-size: 20px; border: none; border-radius: 12px; background: #f97316; color: white; font-weight: bold; }
+    .delivered { background: #16a34a; }
+    .logout { background: #dc2626; }
+    .message { margin-top: 10px; font-weight: bold; color: green; }
+    .error { color: red; font-weight: bold; }
   </style>
 </head>
 <body>
-
   <div id="loginBox">
     <h1>AAHAAR25 Driver Login</h1>
-    <input id="pinInput" type="password" placeholder="Enter Driver PIN">
-    <button onclick="checkPin()">Unlock Driver Panel</button>
-    <p id="pinError" class="error"></p>
+    <input id="driverName" placeholder="Driver Name">
+    <input id="driverPassword" type="password" placeholder="Password or PIN">
+    <button onclick="driverLogin()">Login</button>
+    <p id="loginError" class="error"></p>
   </div>
 
   <div id="driverPanel">
     <h1>AAHAAR25 Driver Panel</h1>
+    <p id="welcome"></p>
+    <button class="logout" onclick="logout()">Logout</button>
 
     <div class="stop-card">
       <h2>Gateway Village</h2>
@@ -114,27 +58,40 @@
     </div>
 
     <div class="stop-card">
-      <h2>One Wells Fargo Center</h2>
-      <button onclick="notifyStop('One Wells Fargo Center', '10min')">10 Min Away</button>
-      <button onclick="notifyStop('One Wells Fargo Center', '5min')">5 Min Away</button>
-      <button onclick="notifyStop('One Wells Fargo Center', 'arrived')">Arrived</button>
-      <button class="delivered" onclick="notifyStop('One Wells Fargo Center', 'delivered')">Delivered</button>
-      <p class="message" id="One Wells Fargo Center-msg"></p>
+      <h2>One Wells Fargo</h2>
+      <button onclick="notifyStop('One Wells Fargo', '10min')">10 Min Away</button>
+      <button onclick="notifyStop('One Wells Fargo', '5min')">5 Min Away</button>
+      <button onclick="notifyStop('One Wells Fargo', 'arrived')">Arrived</button>
+      <button class="delivered" onclick="notifyStop('One Wells Fargo', 'delivered')">Delivered</button>
+      <p class="message" id="One Wells Fargo-msg"></p>
     </div>
   </div>
 
   <script>
-    const DRIVER_PIN = "2525";
+    async function driverLogin() {
+      const name = document.getElementById("driverName").value;
+      const password = document.getElementById("driverPassword").value;
 
-    function checkPin() {
-      const pin = document.getElementById("pinInput").value;
+      const res = await fetch("/driver/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, password })
+      });
 
-      if (pin === DRIVER_PIN) {
+      const data = await res.json();
+
+      if (data.success) {
         document.getElementById("loginBox").style.display = "none";
         document.getElementById("driverPanel").style.display = "block";
+        document.getElementById("welcome").textContent = "Logged in as " + data.driver.name;
       } else {
-        document.getElementById("pinError").textContent = "Wrong PIN. Try again.";
+        document.getElementById("loginError").textContent = "Wrong name or password.";
       }
+    }
+
+    async function logout() {
+      await fetch("/driver/logout", { method: "POST" });
+      location.href = "/driver-login";
     }
 
     async function notifyStop(stop, status) {
@@ -143,9 +100,7 @@
 
       const response = await fetch("/driver/notify-stop", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ stop, status })
       });
 
@@ -154,10 +109,9 @@
       if (data.success) {
         messageBox.textContent = `Sent to ${data.sentCount} customer(s).`;
       } else {
-        messageBox.textContent = "Error sending message.";
+        messageBox.textContent = data.error || "Error sending message.";
       }
     }
   </script>
-
 </body>
 </html>
