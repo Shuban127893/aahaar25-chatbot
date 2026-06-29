@@ -838,6 +838,7 @@ initDatabase()
     });
   })
   .catch((error) => {
-    console.error("Database startup error:", error.message);
-    process.exit(1);
-  });
+  console.error("Database startup error full:", error);
+  console.error("DATABASE_URL exists:", !!process.env.DATABASE_URL);
+  process.exit(1);
+});
