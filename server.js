@@ -1,8 +1,10 @@
 const express = require("express");
 const cors = require("cors");
-const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
+const { Pool } = require("pg");
 require("dotenv").config();
 
 const OpenAI = require("openai");
@@ -10,12 +12,22 @@ const OpenAI = require("openai");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// IMPORTANT: raw body must come before express.json for Square webhook verification
+app.set("trust proxy", 1);
+
+// Square webhook needs raw body BEFORE express.json()
 app.use("/square-webhook", express.raw({ type: "application/json" }));
 
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 app.use(express.static("public"));
+
+app.use(
+  rateLimit({
+    windowMs: 60 * 1000,
+    max: 120,
+  })
+);
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -28,6 +40,9 @@ const SQUARE_LOCATION_ID = process.env.SQUARE_LOCATION_ID;
 const SQUARE_WEBHOOK_SIGNATURE_KEY = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY;
 const SQUARE_ENVIRONMENT = process.env.SQUARE_ENVIRONMENT || "sandbox";
 
+const ADMIN_API_KEY = process.env.ADMIN_API_KEY;
+const DRIVER_API_KEY = process.env.DRIVER_API_KEY;
+
 const SQUARE_BASE_URL =
   SQUARE_ENVIRONMENT === "production"
     ? "https://connect.squareup.com"
@@ -36,21 +51,102 @@ const SQUARE_BASE_URL =
 const SQUARE_WEBHOOK_URL =
   "https://aahaar25-chatbot-production.up.railway.app/square-webhook";
 
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
+});
+
 const userSessions = {};
 
-function readJsonFile(fileName, fallback) {
-  const filePath = path.join(__dirname, fileName);
-  if (!fs.existsSync(filePath)) return fallback;
-  return JSON.parse(fs.readFileSync(filePath, "utf8"));
+async function initDatabase() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS orders (
+      id SERIAL PRIMARY KEY,
+      order_id TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      day TEXT,
+      stop TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      square_payment_link TEXT,
+      square_payment_link_id TEXT,
+      square_order_id TEXT,
+      square_payment_id TEXT UNIQUE,
+      square_receipt_url TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      confirmed_at TIMESTAMPTZ,
+      delivered_at TIMESTAMPTZ
+    );
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_orders_phone ON orders(phone);
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_orders_square_order_id ON orders(square_order_id);
+  `);
 }
 
-function writeJsonFile(fileName, data) {
-  const filePath = path.join(__dirname, fileName);
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+function requireAdmin(req, res, next) {
+  if (!ADMIN_API_KEY) return next();
+
+  const key = req.headers["x-admin-key"];
+  if (key !== ADMIN_API_KEY) {
+    return res.status(401).json({ success: false, error: "Unauthorized" });
+  }
+
+  next();
+}
+
+function requireDriver(req, res, next) {
+  if (!DRIVER_API_KEY) return next();
+
+  const key = req.headers["x-driver-key"];
+  if (key !== DRIVER_API_KEY) {
+    return res.status(401).json({ success: false, error: "Unauthorized" });
+  }
+
+  next();
 }
 
 function generateOrderId() {
-  return "AAH-" + Date.now() + "-" + Math.floor(Math.random() * 10000);
+  return "AAH-" + crypto.randomUUID();
+}
+
+function normalizeDay(text = "") {
+  const lower = text.toLowerCase();
+  if (lower.includes("tuesday") || lower === "tue") return "Tuesday";
+  if (lower.includes("wednesday") || lower === "wed") return "Wednesday";
+  if (lower.includes("thursday") || lower === "thu") return "Thursday";
+  if (lower.includes("friday") || lower === "fri") return "Friday";
+  return null;
+}
+
+function normalizeStop(text = "") {
+  const lower = text.toLowerCase();
+  if (lower.includes("gateway")) return "Gateway Village";
+  if (lower.includes("discovery")) return "Discovery Place";
+  if (lower.includes("ally")) return "Ally Center";
+  if (lower.includes("wells") || lower.includes("fargo")) return "One Wells Fargo";
+  return null;
+}
+
+function getIncomingText(message) {
+  if (message.type === "text") return message.text?.body?.trim() || "";
+
+  if (message.type === "interactive") {
+    const buttonReply = message.interactive?.button_reply;
+    const listReply = message.interactive?.list_reply;
+    if (buttonReply) return buttonReply.id || buttonReply.title || "";
+    if (listReply) return listReply.id || listReply.title || "";
+  }
+
+  return "";
 }
 
 async function squareRequest(endpoint, method = "GET", body = null) {
@@ -67,7 +163,7 @@ async function squareRequest(endpoint, method = "GET", body = null) {
   const data = await response.json();
 
   if (!response.ok) {
-    console.error("Square API error:", data);
+    console.error("Square API error:", JSON.stringify(data));
     throw new Error("Square API request failed");
   }
 
@@ -76,13 +172,13 @@ async function squareRequest(endpoint, method = "GET", body = null) {
 
 async function createSquarePaymentLink(order) {
   const body = {
-    idempotency_key: order.orderId,
+    idempotency_key: order.order_id,
     description: `AAHAAR25 Lunch Box - ${order.name}`,
     order: {
       location_id: SQUARE_LOCATION_ID,
-      reference_id: order.orderId,
+      reference_id: order.order_id,
       metadata: {
-        orderId: order.orderId,
+        orderId: order.order_id,
         customerName: order.name,
         phone: order.phone,
         day: order.day,
@@ -103,7 +199,7 @@ async function createSquarePaymentLink(order) {
       allow_tipping: false,
       redirect_url: "https://aahaar25-chatbot-production.up.railway.app",
     },
-    payment_note: `AAHAAR25 order ${order.orderId}`,
+    payment_note: `AAHAAR25 order ${order.order_id}`,
   };
 
   const data = await squareRequest(
@@ -126,10 +222,14 @@ function verifySquareSignature(rawBody, signatureHeader) {
   hmac.update(SQUARE_WEBHOOK_URL + rawBody.toString("utf8"));
   const digest = hmac.digest("base64");
 
-  return crypto.timingSafeEqual(
-    Buffer.from(digest),
-    Buffer.from(signatureHeader)
-  );
+  try {
+    return crypto.timingSafeEqual(
+      Buffer.from(digest),
+      Buffer.from(signatureHeader)
+    );
+  } catch {
+    return false;
+  }
 }
 
 async function sendWhatsAppPayload(payload) {
@@ -146,8 +246,11 @@ async function sendWhatsAppPayload(payload) {
   );
 
   const data = await response.json();
-  console.log("WhatsApp send status:", response.status);
-  console.log("WhatsApp response:", data);
+
+  if (!response.ok) {
+    console.error("WhatsApp send failed:", response.status, JSON.stringify(data));
+  }
+
   return { ok: response.ok, data };
 }
 
@@ -227,9 +330,7 @@ async function sendStopList(to, day) {
     interactive: {
       type: "list",
       header: { type: "text", text: `📍 ${day} Delivery` },
-      body: {
-        text: "Step 2 of 3:\nChoose your Uptown delivery stop.",
-      },
+      body: { text: "Step 2 of 3:\nChoose your Uptown delivery stop." },
       footer: { text: "Driver waits up to 5 minutes at each stop" },
       action: {
         button: "Choose Stop",
@@ -249,40 +350,8 @@ async function sendStopList(to, day) {
   });
 }
 
-function normalizeDay(text) {
-  const lower = text.toLowerCase();
-  if (lower.includes("tuesday") || lower === "tue") return "Tuesday";
-  if (lower.includes("wednesday") || lower === "wed") return "Wednesday";
-  if (lower.includes("thursday") || lower === "thu") return "Thursday";
-  if (lower.includes("friday") || lower === "fri") return "Friday";
-  return null;
-}
-
-function normalizeStop(text) {
-  const lower = text.toLowerCase();
-  if (lower.includes("gateway")) return "Gateway Village";
-  if (lower.includes("discovery")) return "Discovery Place";
-  if (lower.includes("ally")) return "Ally Center";
-  if (lower.includes("wells") || lower.includes("fargo")) return "One Wells Fargo";
-  return null;
-}
-
-function getIncomingText(message) {
-  if (message.type === "text") return message.text?.body?.trim() || "";
-
-  if (message.type === "interactive") {
-    const buttonReply = message.interactive?.button_reply;
-    const listReply = message.interactive?.list_reply;
-
-    if (buttonReply) return buttonReply.id || buttonReply.title || "";
-    if (listReply) return listReply.id || listReply.title || "";
-  }
-
-  return "";
-}
-
 app.get("/", (req, res) => {
-  res.send("Ahaar25 chatbot backend is running");
+  res.send("Ahaar25 chatbot backend is running with PostgreSQL orders.");
 });
 
 app.post("/square-webhook", async (req, res) => {
@@ -290,88 +359,89 @@ app.post("/square-webhook", async (req, res) => {
     const rawBody = req.body;
     const signature = req.headers["x-square-hmacsha256-signature"];
 
-    const isValid = verifySquareSignature(rawBody, signature);
-
-    if (!isValid) {
+    if (!verifySquareSignature(rawBody, signature)) {
       console.warn("Invalid Square webhook signature");
       return res.sendStatus(401);
     }
 
     const event = JSON.parse(rawBody.toString("utf8"));
 
-    console.log("Square webhook received:", event.type);
-
     if (event.type !== "payment.updated" && event.type !== "payment.created") {
       return res.sendStatus(200);
     }
 
     const payment = event.data?.object?.payment;
-
-    if (!payment) return res.sendStatus(200);
-
-    console.log("Square payment status:", payment.status);
-    console.log("Square order ID:", payment.order_id);
-
-    if (payment.status !== "COMPLETED") {
+    if (!payment || payment.status !== "COMPLETED") {
       return res.sendStatus(200);
     }
 
-    const orders = readJsonFile("orders-today.json", []);
-
-    let orderIndex = orders.findIndex(
-      (order) =>
-        order.squareOrderId === payment.order_id ||
-        order.squarePaymentId === payment.id
+    let orderResult = await pool.query(
+      `
+      SELECT * FROM orders
+      WHERE square_order_id = $1 OR square_payment_id = $2
+      LIMIT 1
+      `,
+      [payment.order_id, payment.id]
     );
 
-    if (orderIndex === -1 && payment.order_id) {
+    if (orderResult.rows.length === 0 && payment.order_id) {
       const squareOrderData = await squareRequest(`/v2/orders/${payment.order_id}`);
       const referenceId = squareOrderData.order?.reference_id;
 
-      orderIndex = orders.findIndex((order) => order.orderId === referenceId);
+      if (referenceId) {
+        orderResult = await pool.query(
+          `SELECT * FROM orders WHERE order_id = $1 LIMIT 1`,
+          [referenceId]
+        );
+      }
     }
 
-    if (orderIndex === -1) {
+    if (orderResult.rows.length === 0) {
       console.warn("No matching local order found for Square payment.");
       return res.sendStatus(200);
     }
 
-    if (orders[orderIndex].status === "confirmed") {
+    const order = orderResult.rows[0];
+
+    if (order.status === "confirmed") {
       return res.sendStatus(200);
     }
 
-    orders[orderIndex].status = "confirmed";
-    orders[orderIndex].confirmedAt = new Date().toISOString();
-    orders[orderIndex].squarePaymentId = payment.id;
-    orders[orderIndex].squareReceiptUrl = payment.receipt_url || "";
+    const updated = await pool.query(
+      `
+      UPDATE orders
+      SET status = 'confirmed',
+          confirmed_at = NOW(),
+          square_payment_id = $1,
+          square_receipt_url = $2
+      WHERE order_id = $3
+      RETURNING *
+      `,
+      [payment.id, payment.receipt_url || "", order.order_id]
+    );
 
-    writeJsonFile("orders-today.json", orders);
-
-    const order = orders[orderIndex];
+    const confirmedOrder = updated.rows[0];
 
     const confirmationMessage =
       `✅ Your AAHAAR25 order has been automatically confirmed.\n\n` +
-      `Name: ${order.name}\n` +
-      `Day: ${order.day}\n` +
-      `Stop: ${order.stop}\n\n` +
+      `Name: ${confirmedOrder.name}\n` +
+      `Day: ${confirmedOrder.day}\n` +
+      `Stop: ${confirmedOrder.stop}\n\n` +
       `You will receive delivery updates on WhatsApp.`;
 
-    if (order.phone) {
-      await sendWhatsAppMessage(order.phone, confirmationMessage);
-    }
+    await sendWhatsAppMessage(confirmedOrder.phone, confirmationMessage);
 
-    console.log("Order automatically confirmed:", order.orderId);
-
+    console.log("Order automatically confirmed:", confirmedOrder.order_id);
     res.sendStatus(200);
   } catch (error) {
-    console.error("Square webhook error:", error);
+    console.error("Square webhook error:", error.message);
     res.sendStatus(500);
   }
 });
 
 app.post("/chat", async (req, res) => {
   try {
-    const userMessage = req.body.message;
+    const userMessage = String(req.body.message || "").slice(0, 1000);
 
     const response = await client.responses.create({
       model: "gpt-4o-mini",
@@ -381,7 +451,7 @@ app.post("/chat", async (req, res) => {
 
     res.json({ reply: response.output_text });
   } catch (error) {
-    console.error("Chat error:", error);
+    console.error("Chat error:", error.message);
     res.status(500).json({
       reply: "Sorry, something went wrong. Please call AAHAAR25 directly.",
     });
@@ -394,7 +464,7 @@ app.get("/webhook", (req, res) => {
   const challenge = req.query["hub.challenge"];
 
   if (mode === "subscribe" && token === WHATSAPP_VERIFY_TOKEN) {
-    console.log("Webhook verified successfully");
+    console.log("WhatsApp webhook verified");
     res.status(200).send(challenge);
   } else {
     res.sendStatus(403);
@@ -411,9 +481,6 @@ app.post("/webhook", async (req, res) => {
     const from = message.from;
     const userText = getIncomingText(message);
     const lower = userText.toLowerCase();
-
-    console.log("WhatsApp message from:", from);
-    console.log("Message:", userText);
 
     let session = userSessions[from];
 
@@ -504,68 +571,76 @@ app.post("/webhook", async (req, res) => {
     }
 
     if (session?.step === "ask_name") {
-      const name = userText;
-      session.order.name = name;
-
-      const orders = readJsonFile("orders-today.json", []);
+      const cleanName = userText.replace(/[<>]/g, "").slice(0, 80);
 
       const newOrder = {
-        orderId: generateOrderId(),
-        name: session.order.name,
+        order_id: generateOrderId(),
+        name: cleanName,
         phone: session.order.phone,
         day: session.order.day,
         stop: session.order.stop,
-        status: "pending",
-        createdAt: new Date().toISOString(),
       };
 
-      try {
-        const squareLink = await createSquarePaymentLink(newOrder);
+      const squareLink = await createSquarePaymentLink(newOrder);
 
-        newOrder.squarePaymentLink = squareLink.url;
-        newOrder.squarePaymentLinkId = squareLink.paymentLinkId;
-        newOrder.squareOrderId = squareLink.squareOrderId;
-      } catch (squareError) {
-        console.error("Could not create Square payment link:", squareError);
-      }
+      const inserted = await pool.query(
+        `
+        INSERT INTO orders (
+          order_id, name, phone, day, stop, status,
+          square_payment_link, square_payment_link_id, square_order_id
+        )
+        VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8)
+        RETURNING *
+        `,
+        [
+          newOrder.order_id,
+          newOrder.name,
+          newOrder.phone,
+          newOrder.day,
+          newOrder.stop,
+          squareLink.url,
+          squareLink.paymentLinkId,
+          squareLink.squareOrderId,
+        ]
+      );
 
-      orders.push(newOrder);
-      writeJsonFile("orders-today.json", orders);
+      const order = inserted.rows[0];
 
       delete userSessions[from];
 
-      let reply =
-        `Thanks ${name}. Your AAHAAR25 lunch box order request has been saved as pending.\n\n` +
-        `Day: ${newOrder.day}\n` +
-        `Stop: ${newOrder.stop}\n\n`;
+      await sendWhatsAppMessage(
+        from,
+        `Thanks ${order.name}. Your AAHAAR25 lunch box order request has been saved as pending.\n\n` +
+          `Day: ${order.day}\n` +
+          `Stop: ${order.stop}\n\n` +
+          `Please complete payment here:\n${order.square_payment_link}\n\n` +
+          `After payment, your order should confirm automatically.`
+      );
 
-      if (newOrder.squarePaymentLink) {
-        reply +=
-          `Please complete payment here:\n${newOrder.squarePaymentLink}\n\n` +
-          `After payment, your order should confirm automatically.`;
-      } else {
-        reply +=
-          "The payment link could not be created. Please call AAHAAR25 for help.";
-      }
-
-      await sendWhatsAppMessage(from, reply);
       return res.sendStatus(200);
     }
 
     if (lower.includes("status")) {
-      const orders = readJsonFile("orders-today.json", []);
-      const customerOrders = orders.filter((order) => order.phone === from);
+      const result = await pool.query(
+        `
+        SELECT * FROM orders
+        WHERE phone = $1
+        ORDER BY created_at DESC
+        LIMIT 1
+        `,
+        [from]
+      );
 
-      if (customerOrders.length === 0) {
+      if (result.rows.length === 0) {
         await sendWhatsAppMessage(
           from,
-          "I couldn't find an order connected to this WhatsApp number. To start an order, tap Order Lunch Box below."
+          "I couldn't find an order connected to this WhatsApp number. To start an order, tap Order below."
         );
         await sendMainMenu(from);
         return res.sendStatus(200);
       }
 
-      const latestOrder = customerOrders[customerOrders.length - 1];
+      const latestOrder = result.rows[0];
 
       await sendWhatsAppMessage(
         from,
@@ -581,12 +656,12 @@ app.post("/webhook", async (req, res) => {
     await sendMainMenu(from);
     res.sendStatus(200);
   } catch (error) {
-    console.error("Webhook error:", error);
+    console.error("WhatsApp webhook error:", error.message);
     res.sendStatus(500);
   }
 });
 
-app.post("/driver/notify-stop", async (req, res) => {
+app.post("/driver/notify-stop", requireDriver, async (req, res) => {
   try {
     const { stop, status } = req.body;
 
@@ -598,19 +673,23 @@ app.post("/driver/notify-stop", async (req, res) => {
     }
 
     const normalizedStop = normalizeStop(stop);
-    const orders = readJsonFile("orders-today.json", []);
 
-    const customersAtStop = orders.filter(
-      (order) =>
-        normalizeStop(order.stop) === normalizedStop &&
-        order.status === "confirmed"
+    const result = await pool.query(
+      `
+      SELECT * FROM orders
+      WHERE status = 'confirmed'
+      AND LOWER(stop) LIKE LOWER($1)
+      `,
+      [`%${normalizedStop.split(" ")[0]}%`]
     );
+
+    const customersAtStop = result.rows;
 
     if (customersAtStop.length === 0) {
       return res.json({
         success: true,
         sentCount: 0,
-        message: `No confirmed customers found for ${stop}`,
+        message: `No confirmed customers found for ${normalizedStop}`,
       });
     }
 
@@ -634,9 +713,21 @@ app.post("/driver/notify-stop", async (req, res) => {
     let sentCount = 0;
 
     for (const customer of customersAtStop) {
-      if (!customer.phone) continue;
       const result = await sendWhatsAppMessage(customer.phone, whatsappMessage);
       if (result.ok) sentCount++;
+    }
+
+    if (status === "delivered") {
+      await pool.query(
+        `
+        UPDATE orders
+        SET status = 'delivered',
+            delivered_at = NOW()
+        WHERE status = 'confirmed'
+        AND LOWER(stop) LIKE LOWER($1)
+        `,
+        [`%${normalizedStop.split(" ")[0]}%`]
+      );
     }
 
     res.json({
@@ -647,7 +738,7 @@ app.post("/driver/notify-stop", async (req, res) => {
       totalCustomers: customersAtStop.length,
     });
   } catch (error) {
-    console.error("Driver notification error:", error);
+    console.error("Driver notification error:", error.message);
     res.status(500).json({
       success: false,
       error: "Driver notification failed",
@@ -655,34 +746,74 @@ app.post("/driver/notify-stop", async (req, res) => {
   }
 });
 
-app.get("/admin/orders", (req, res) => {
+app.get("/admin/orders", requireAdmin, async (req, res) => {
   try {
-    const orders = readJsonFile("orders-today.json", []);
-    res.json(orders);
+    const result = await pool.query(
+      `
+      SELECT *
+      FROM orders
+      ORDER BY created_at DESC
+      LIMIT 200
+      `
+    );
+
+    res.json(result.rows);
   } catch (error) {
-    console.error("Admin orders error:", error);
+    console.error("Admin orders error:", error.message);
     res.status(500).json([]);
   }
 });
 
-app.post("/admin/confirm-order", async (req, res) => {
+app.post("/admin/confirm-order", requireAdmin, async (req, res) => {
   try {
-    const { index } = req.body;
-    const orders = readJsonFile("orders-today.json", []);
+    const { orderId, index } = req.body;
 
-    if (index === undefined || !orders[index]) {
-      return res.status(400).json({
-        success: false,
-        error: "Invalid order index",
-      });
+    let order;
+
+    if (orderId) {
+      const result = await pool.query(
+        `
+        UPDATE orders
+        SET status = 'confirmed',
+            confirmed_at = NOW()
+        WHERE order_id = $1
+        RETURNING *
+        `,
+        [orderId]
+      );
+      order = result.rows[0];
+    } else if (index !== undefined) {
+      const list = await pool.query(
+        `
+        SELECT * FROM orders
+        ORDER BY created_at DESC
+        LIMIT 200
+        `
+      );
+
+      const selected = list.rows[index];
+
+      if (selected) {
+        const result = await pool.query(
+          `
+          UPDATE orders
+          SET status = 'confirmed',
+              confirmed_at = NOW()
+          WHERE order_id = $1
+          RETURNING *
+          `,
+          [selected.order_id]
+        );
+        order = result.rows[0];
+      }
     }
 
-    orders[index].status = "confirmed";
-    orders[index].confirmedAt = new Date().toISOString();
-
-    writeJsonFile("orders-today.json", orders);
-
-    const order = orders[index];
+    if (!order) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid order",
+      });
+    }
 
     const confirmationMessage =
       `✅ Your AAHAAR25 order has been confirmed.\n\n` +
@@ -690,17 +821,23 @@ app.post("/admin/confirm-order", async (req, res) => {
       `Stop: ${order.stop}\n\n` +
       `You will receive delivery updates on WhatsApp.`;
 
-    if (order.phone) {
-      await sendWhatsAppMessage(order.phone, confirmationMessage);
-    }
+    await sendWhatsAppMessage(order.phone, confirmationMessage);
 
     res.json({ success: true, order });
   } catch (error) {
-    console.error("Confirm order error:", error);
+    console.error("Confirm order error:", error.message);
     res.status(500).json({ success: false });
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+initDatabase()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+      console.log("Database ready");
+    });
+  })
+  .catch((error) => {
+    console.error("Database startup error:", error.message);
+    process.exit(1);
+  });
