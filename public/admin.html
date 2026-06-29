@@ -224,10 +224,7 @@
         .replaceAll("'", "&#039;");
     }
 
-    loadOrders().then(() => {
-      document.getElementById("loginBox").style.display = "none";
-      document.getElementById("adminPanel").style.display = "block";
-    }).catch(() => {});
+   // Stay on login screen until admin enters password.
   </script>
 </body>
 </html>
