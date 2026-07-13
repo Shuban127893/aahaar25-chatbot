@@ -56,11 +56,7 @@ async function initializeDatabase() {
     );
   `);
 
-  await pool.query(`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_drivers_phone_unique
-    ON drivers(phone)
-    WHERE phone IS NOT NULL;
-  `);
+ 
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS driver_sessions (
