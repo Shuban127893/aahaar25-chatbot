@@ -3,14 +3,17 @@ const cors = require("cors");
 const path = require("path");
 const crypto = require("crypto");
 const helmet = require("helmet");
-const rateLimit = require("express-rate-limit");
+const rateLimit = require(
+  "express-rate-limit"
+);
 
 require("dotenv").config();
 
 const OpenAI = require("openai");
 
-const pool =
-  require("./config/database");
+const pool = require(
+  "./config/database"
+);
 
 const {
   initializeDatabase,
@@ -18,11 +21,21 @@ const {
   "./database/initializeDatabase"
 );
 
-const createWhatsAppRouter =
-  require("./routes/whatsappRoutes");
+const createWhatsAppRouter = require(
+  "./routes/whatsappRoutes"
+);
 
-const createSquareRouter =
-  require("./routes/squareRoutes");
+const createSquareRouter = require(
+  "./routes/squareRoutes"
+);
+
+const createAdminAuth = require(
+  "./middleware/adminAuth"
+);
+
+const createDriverAuth = require(
+  "./middleware/driverAuth"
+);
 
 const {
   sendWhatsAppMessage,
@@ -38,6 +51,16 @@ const {
   "./services/squareService"
 );
 
+const {
+  hashPassword,
+  authenticateDriver,
+  createDriverSession,
+  deleteDriverSession,
+  deleteAllDriverSessions,
+} = require(
+  "./services/driverAuthService"
+);
+
 const app = express();
 
 const PORT =
@@ -46,8 +69,8 @@ const PORT =
 app.set("trust proxy", 1);
 
 /*
-Square must receive the original raw body.
-This must come before express.json().
+Square needs the exact raw request body.
+This must stay above express.json().
 */
 app.use(
   "/square-webhook",
@@ -96,11 +119,10 @@ app.use(
   })
 );
 
-const client =
-  new OpenAI({
-    apiKey:
-      process.env.OPENAI_API_KEY,
-  });
+const client = new OpenAI({
+  apiKey:
+    process.env.OPENAI_API_KEY,
+});
 
 const ADMIN_API_KEY =
   process.env.ADMIN_API_KEY;
@@ -160,278 +182,26 @@ function clearCookie(
   );
 }
 
-/* Password helpers */
+/* Imported authentication middleware */
 
-function hashPassword(password) {
-  const salt = crypto
-    .randomBytes(16)
-    .toString("hex");
+const {
+  requireAdmin,
+  requireAdminPage,
+} = createAdminAuth({
+  pool,
+  getCookie,
+  adminApiKey:
+    ADMIN_API_KEY,
+});
 
-  const hash = crypto
-    .pbkdf2Sync(
-      password,
-      salt,
-      100000,
-      64,
-      "sha512"
-    )
-    .toString("hex");
-
-  return `${salt}:${hash}`;
-}
-
-function verifyPassword(
-  password,
-  stored
-) {
-  if (
-    !stored ||
-    !stored.includes(":")
-  ) {
-    return false;
-  }
-
-  const [
-    salt,
-    originalHash,
-  ] = stored.split(":");
-
-  const calculatedHash =
-    crypto
-      .pbkdf2Sync(
-        password,
-        salt,
-        100000,
-        64,
-        "sha512"
-      )
-      .toString("hex");
-
-  const expected =
-    Buffer.from(originalHash);
-
-  const received =
-    Buffer.from(calculatedHash);
-
-  if (
-    expected.length !==
-    received.length
-  ) {
-    return false;
-  }
-
-  try {
-    return crypto.timingSafeEqual(
-      expected,
-      received
-    );
-  } catch {
-    return false;
-  }
-}
-
-/* Admin authentication */
-
-async function requireAdmin(
-  req,
-  res,
-  next
-) {
-  try {
-    if (
-      ADMIN_API_KEY &&
-      req.headers[
-        "x-admin-key"
-      ] === ADMIN_API_KEY
-    ) {
-      return next();
-    }
-
-    const token = getCookie(
-      req,
-      "admin_session"
-    );
-
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        error:
-          "Admin login required",
-      });
-    }
-
-    const result =
-      await pool.query(
-        `
-        SELECT token
-        FROM admin_sessions
-        WHERE token = $1
-          AND expires_at > NOW()
-        LIMIT 1
-        `,
-        [token]
-      );
-
-    if (
-      result.rows.length === 0
-    ) {
-      return res.status(401).json({
-        success: false,
-        error:
-          "Invalid admin session",
-      });
-    }
-
-    return next();
-  } catch (error) {
-    console.error(
-      "Admin authentication error:",
-      error.message
-    );
-
-    return res.status(401).json({
-      success: false,
-      error:
-        "Admin authentication failed",
-    });
-  }
-}
-
-async function requireAdminPage(
-  req,
-  res,
-  next
-) {
-  try {
-    const token = getCookie(
-      req,
-      "admin_session"
-    );
-
-    if (!token) {
-      return res.redirect(
-        "/admin-login"
-      );
-    }
-
-    const result =
-      await pool.query(
-        `
-        SELECT token
-        FROM admin_sessions
-        WHERE token = $1
-          AND expires_at > NOW()
-        LIMIT 1
-        `,
-        [token]
-      );
-
-    if (
-      result.rows.length === 0
-    ) {
-      return res.redirect(
-        "/admin-login"
-      );
-    }
-
-    return next();
-  } catch (error) {
-    console.error(
-      "Admin page authentication error:",
-      error.message
-    );
-
-    return res.redirect(
-      "/admin-login"
-    );
-  }
-}
-
-/* Driver authentication */
-
-async function requireDriver(
-  req,
-  res,
-  next
-) {
-  try {
-    if (
-      DRIVER_API_KEY &&
-      req.headers[
-        "x-driver-key"
-      ] === DRIVER_API_KEY
-    ) {
-      return next();
-    }
-
-    const authorization =
-      req.headers.authorization || "";
-
-    const bearerToken =
-      authorization.startsWith(
-        "Bearer "
-      )
-        ? authorization.slice(7)
-        : "";
-
-    const token =
-      bearerToken ||
-      getCookie(
-        req,
-        "driver_session"
-      );
-
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        error:
-          "Driver login required",
-      });
-    }
-
-    const result =
-      await pool.query(
-        `
-        SELECT drivers.*
-        FROM driver_sessions
-        JOIN drivers
-          ON drivers.id =
-             driver_sessions.driver_id
-        WHERE driver_sessions.token = $1
-          AND driver_sessions.expires_at > NOW()
-          AND drivers.is_active = TRUE
-        LIMIT 1
-        `,
-        [token]
-      );
-
-    if (
-      result.rows.length === 0
-    ) {
-      return res.status(401).json({
-        success: false,
-        error:
-          "Invalid or expired driver session",
-      });
-    }
-
-    req.driver =
-      result.rows[0];
-
-    return next();
-  } catch (error) {
-    console.error(
-      "Driver authentication error:",
-      error.message
-    );
-
-    return res.status(401).json({
-      success: false,
-      error:
-        "Driver authentication failed",
-    });
-  }
-}
+const {
+  requireDriver,
+} = createDriverAuth({
+  pool,
+  getCookie,
+  driverApiKey:
+    DRIVER_API_KEY,
+});
 
 /* General helpers */
 
@@ -481,7 +251,7 @@ app.get("/", (req, res) => {
   return res.send(
     "AAHAAR25 backend is running " +
       "with PostgreSQL, WhatsApp, " +
-      "and Square services."
+      "Square, and refactored authentication."
   );
 });
 
@@ -542,6 +312,12 @@ app.get(
 
 app.post(
   "/admin/login",
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+  }),
   async (req, res) => {
     try {
       const password =
@@ -655,51 +431,22 @@ app.post(
 
 app.post(
   "/driver/login",
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+  }),
   async (req, res) => {
     try {
-      const name =
-        String(
-          req.body.name || ""
-        ).trim();
-
-      const password =
-        String(
-          req.body.password || ""
-        );
-
-      const result =
-        await pool.query(
-          `
-          SELECT *
-          FROM drivers
-          WHERE LOWER(name) =
-                LOWER($1)
-            AND is_active = TRUE
-          LIMIT 1
-          `,
-          [name]
-        );
-
-      if (
-        result.rows.length === 0
-      ) {
-        return res
-          .status(401)
-          .json({
-            success: false,
-            error: "Invalid login",
-          });
-      }
-
       const driver =
-        result.rows[0];
+        await authenticateDriver(
+          pool,
+          req.body.name,
+          req.body.password
+        );
 
-      if (
-        !verifyPassword(
-          password,
-          driver.password_hash
-        )
-      ) {
+      if (!driver) {
         return res
           .status(401)
           .json({
@@ -708,37 +455,12 @@ app.post(
           });
       }
 
-      const token = crypto
-        .randomBytes(32)
-        .toString("hex");
-
-      await pool.query(
-        `
-        INSERT INTO driver_sessions (
-          token,
-          driver_id,
-          expires_at
-        )
-        VALUES (
-          $1,
-          $2,
-          NOW() + INTERVAL '8 hours'
-        )
-        `,
-        [
-          token,
+      const token =
+        await createDriverSession(
+          pool,
           driver.id,
-        ]
-      );
-
-      await pool.query(
-        `
-        UPDATE drivers
-        SET last_login = NOW()
-        WHERE id = $1
-        `,
-        [driver.id]
-      );
+          8
+        );
 
       setCookie(
         res,
@@ -780,15 +502,10 @@ app.post(
         "driver_session"
       );
 
-      if (token) {
-        await pool.query(
-          `
-          DELETE FROM driver_sessions
-          WHERE token = $1
-          `,
-          [token]
-        );
-      }
+      await deleteDriverSession(
+        pool,
+        token
+      );
 
       clearCookie(
         res,
@@ -1388,12 +1105,9 @@ app.post(
           });
       }
 
-      await pool.query(
-        `
-        DELETE FROM driver_sessions
-        WHERE driver_id = $1
-        `,
-        [driverId]
+      await deleteAllDriverSessions(
+        pool,
+        driverId
       );
 
       return res.json({
