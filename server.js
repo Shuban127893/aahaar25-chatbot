@@ -7,26 +7,47 @@ const rateLimit = require("express-rate-limit");
 
 require("dotenv").config();
 
-const pool = require("./config/database");
-const {
-  initializeDatabase,
-} = require("./database/initializeDatabase");
-
-const createWhatsAppRouter = require("./routes/whatsappRoutes");
-const {
-  sendWhatsAppMessage,
-} = require("./services/whatsappService");
-
 const OpenAI = require("openai");
 
+const pool =
+  require("./config/database");
+
+const {
+  initializeDatabase,
+} = require(
+  "./database/initializeDatabase"
+);
+
+const createWhatsAppRouter =
+  require("./routes/whatsappRoutes");
+
+const createSquareRouter =
+  require("./routes/squareRoutes");
+
+const {
+  sendWhatsAppMessage,
+} = require(
+  "./services/whatsappService"
+);
+
+const {
+  createSquarePaymentLink,
+  getSquarePayment,
+  refundSquarePayment,
+} = require(
+  "./services/squareService"
+);
+
 const app = express();
-const PORT = process.env.PORT || 3000;
+
+const PORT =
+  process.env.PORT || 3000;
 
 app.set("trust proxy", 1);
 
 /*
-Square must receive the original raw request body so its webhook
-signature can be verified correctly.
+Square must receive the original raw body.
+This must come before express.json().
 */
 app.use(
   "/square-webhook",
@@ -49,22 +70,22 @@ app.use(
   })
 );
 
-/*
-Prevent people from directly opening the raw HTML filenames.
-They should use /admin-login and /driver-login instead.
-*/
 app.use((req, res, next) => {
   if (
     req.path === "/admin.html" ||
     req.path === "/driver.html"
   ) {
-    return res.status(404).send("Not found");
+    return res
+      .status(404)
+      .send("Not found");
   }
 
-  next();
+  return next();
 });
 
-app.use(express.static("public"));
+app.use(
+  express.static("public")
+);
 
 app.use(
   rateLimit({
@@ -75,25 +96,11 @@ app.use(
   })
 );
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-/* Square configuration */
-
-const SQUARE_ACCESS_TOKEN =
-  process.env.SQUARE_ACCESS_TOKEN;
-
-const SQUARE_LOCATION_ID =
-  process.env.SQUARE_LOCATION_ID;
-
-const SQUARE_WEBHOOK_SIGNATURE_KEY =
-  process.env.SQUARE_WEBHOOK_SIGNATURE_KEY;
-
-const SQUARE_ENVIRONMENT =
-  process.env.SQUARE_ENVIRONMENT || "sandbox";
-
-/* Admin and driver configuration */
+const client =
+  new OpenAI({
+    apiKey:
+      process.env.OPENAI_API_KEY,
+  });
 
 const ADMIN_API_KEY =
   process.env.ADMIN_API_KEY;
@@ -105,21 +112,16 @@ const ADMIN_PASSWORD =
 const DRIVER_API_KEY =
   process.env.DRIVER_API_KEY;
 
-const SQUARE_BASE_URL =
-  SQUARE_ENVIRONMENT === "production"
-    ? "https://connect.squareup.com"
-    : "https://connect.squareupsandbox.com";
-
-const SQUARE_WEBHOOK_URL =
-  "https://aahaar25-chatbot-production.up.railway.app/square-webhook";
-
 /* Cookie helpers */
 
 function getCookie(req, name) {
-  const cookies = req.headers.cookie || "";
+  const cookies =
+    req.headers.cookie || "";
 
   const match = cookies.match(
-    new RegExp(`(^| )${name}=([^;]+)`)
+    new RegExp(
+      `(^| )${name}=([^;]+)`
+    )
   );
 
   return match
@@ -135,17 +137,26 @@ function setCookie(
 ) {
   res.setHeader(
     "Set-Cookie",
-    `${name}=${encodeURIComponent(value)}; ` +
-      `HttpOnly; Secure; SameSite=Lax; ` +
-      `Path=/; Max-Age=${maxAgeSeconds}`
+
+    `${name}=${encodeURIComponent(
+      value
+    )}; ` +
+      "HttpOnly; Secure; " +
+      "SameSite=Lax; Path=/; " +
+      `Max-Age=${maxAgeSeconds}`
   );
 }
 
-function clearCookie(res, name) {
+function clearCookie(
+  res,
+  name
+) {
   res.setHeader(
     "Set-Cookie",
-    `${name}=; HttpOnly; Secure; ` +
-      `SameSite=Lax; Path=/; Max-Age=0`
+
+    `${name}=; HttpOnly; ` +
+      "Secure; SameSite=Lax; " +
+      "Path=/; Max-Age=0"
   );
 }
 
@@ -169,28 +180,50 @@ function hashPassword(password) {
   return `${salt}:${hash}`;
 }
 
-function verifyPassword(password, stored) {
-  if (!stored || !stored.includes(":")) {
+function verifyPassword(
+  password,
+  stored
+) {
+  if (
+    !stored ||
+    !stored.includes(":")
+  ) {
     return false;
   }
 
-  const [salt, originalHash] =
-    stored.split(":");
+  const [
+    salt,
+    originalHash,
+  ] = stored.split(":");
 
-  const hash = crypto
-    .pbkdf2Sync(
-      password,
-      salt,
-      100000,
-      64,
-      "sha512"
-    )
-    .toString("hex");
+  const calculatedHash =
+    crypto
+      .pbkdf2Sync(
+        password,
+        salt,
+        100000,
+        64,
+        "sha512"
+      )
+      .toString("hex");
+
+  const expected =
+    Buffer.from(originalHash);
+
+  const received =
+    Buffer.from(calculatedHash);
+
+  if (
+    expected.length !==
+    received.length
+  ) {
+    return false;
+  }
 
   try {
     return crypto.timingSafeEqual(
-      Buffer.from(hash),
-      Buffer.from(originalHash)
+      expected,
+      received
     );
   } catch {
     return false;
@@ -207,8 +240,9 @@ async function requireAdmin(
   try {
     if (
       ADMIN_API_KEY &&
-      req.headers["x-admin-key"] ===
-        ADMIN_API_KEY
+      req.headers[
+        "x-admin-key"
+      ] === ADMIN_API_KEY
     ) {
       return next();
     }
@@ -221,25 +255,30 @@ async function requireAdmin(
     if (!token) {
       return res.status(401).json({
         success: false,
-        error: "Admin login required",
+        error:
+          "Admin login required",
       });
     }
 
-    const result = await pool.query(
-      `
-      SELECT token
-      FROM admin_sessions
-      WHERE token = $1
-        AND expires_at > NOW()
-      LIMIT 1
-      `,
-      [token]
-    );
+    const result =
+      await pool.query(
+        `
+        SELECT token
+        FROM admin_sessions
+        WHERE token = $1
+          AND expires_at > NOW()
+        LIMIT 1
+        `,
+        [token]
+      );
 
-    if (result.rows.length === 0) {
+    if (
+      result.rows.length === 0
+    ) {
       return res.status(401).json({
         success: false,
-        error: "Invalid admin session",
+        error:
+          "Invalid admin session",
       });
     }
 
@@ -252,7 +291,8 @@ async function requireAdmin(
 
     return res.status(401).json({
       success: false,
-      error: "Admin authentication failed",
+      error:
+        "Admin authentication failed",
     });
   }
 }
@@ -269,22 +309,29 @@ async function requireAdminPage(
     );
 
     if (!token) {
-      return res.redirect("/admin-login");
+      return res.redirect(
+        "/admin-login"
+      );
     }
 
-    const result = await pool.query(
-      `
-      SELECT token
-      FROM admin_sessions
-      WHERE token = $1
-        AND expires_at > NOW()
-      LIMIT 1
-      `,
-      [token]
-    );
+    const result =
+      await pool.query(
+        `
+        SELECT token
+        FROM admin_sessions
+        WHERE token = $1
+          AND expires_at > NOW()
+        LIMIT 1
+        `,
+        [token]
+      );
 
-    if (result.rows.length === 0) {
-      return res.redirect("/admin-login");
+    if (
+      result.rows.length === 0
+    ) {
+      return res.redirect(
+        "/admin-login"
+      );
     }
 
     return next();
@@ -294,7 +341,9 @@ async function requireAdminPage(
       error.message
     );
 
-    return res.redirect("/admin-login");
+    return res.redirect(
+      "/admin-login"
+    );
   }
 }
 
@@ -308,8 +357,9 @@ async function requireDriver(
   try {
     if (
       DRIVER_API_KEY &&
-      req.headers["x-driver-key"] ===
-        DRIVER_API_KEY
+      req.headers[
+        "x-driver-key"
+      ] === DRIVER_API_KEY
     ) {
       return next();
     }
@@ -318,37 +368,46 @@ async function requireDriver(
       req.headers.authorization || "";
 
     const bearerToken =
-      authorization.startsWith("Bearer ")
+      authorization.startsWith(
+        "Bearer "
+      )
         ? authorization.slice(7)
         : "";
 
     const token =
       bearerToken ||
-      getCookie(req, "driver_session");
+      getCookie(
+        req,
+        "driver_session"
+      );
 
     if (!token) {
       return res.status(401).json({
         success: false,
-        error: "Driver login required",
+        error:
+          "Driver login required",
       });
     }
 
-    const result = await pool.query(
-      `
-      SELECT drivers.*
-      FROM driver_sessions
-      JOIN drivers
-        ON drivers.id =
-           driver_sessions.driver_id
-      WHERE driver_sessions.token = $1
-        AND driver_sessions.expires_at > NOW()
-        AND drivers.is_active = TRUE
-      LIMIT 1
-      `,
-      [token]
-    );
+    const result =
+      await pool.query(
+        `
+        SELECT drivers.*
+        FROM driver_sessions
+        JOIN drivers
+          ON drivers.id =
+             driver_sessions.driver_id
+        WHERE driver_sessions.token = $1
+          AND driver_sessions.expires_at > NOW()
+          AND drivers.is_active = TRUE
+        LIMIT 1
+        `,
+        [token]
+      );
 
-    if (result.rows.length === 0) {
+    if (
+      result.rows.length === 0
+    ) {
       return res.status(401).json({
         success: false,
         error:
@@ -356,7 +415,8 @@ async function requireDriver(
       });
     }
 
-    req.driver = result.rows[0];
+    req.driver =
+      result.rows[0];
 
     return next();
   } catch (error) {
@@ -367,7 +427,8 @@ async function requireDriver(
 
     return res.status(401).json({
       success: false,
-      error: "Driver authentication failed",
+      error:
+        "Driver authentication failed",
     });
   }
 }
@@ -375,55 +436,28 @@ async function requireDriver(
 /* General helpers */
 
 function generateOrderId() {
-  return `AAH-${crypto.randomUUID()}`;
+  return (
+    "AAH-" +
+    crypto.randomUUID()
+  );
 }
 
-function normalizeDay(text = "") {
-  const lower = text
+function normalizeStop(
+  text = ""
+) {
+  const lower = String(text)
     .trim()
     .toLowerCase();
 
   if (
-    lower.includes("tuesday") ||
-    lower === "tue"
+    lower.includes("gateway")
   ) {
-    return "Tuesday";
-  }
-
-  if (
-    lower.includes("wednesday") ||
-    lower === "wed"
-  ) {
-    return "Wednesday";
-  }
-
-  if (
-    lower.includes("thursday") ||
-    lower === "thu"
-  ) {
-    return "Thursday";
-  }
-
-  if (
-    lower.includes("friday") ||
-    lower === "fri"
-  ) {
-    return "Friday";
-  }
-
-  return null;
-}
-
-function normalizeStop(text = "") {
-  const lower = text
-    .trim()
-    .toLowerCase();
-
-  if (lower.includes("gateway")) {
     return "Gateway Village";
   }
 
-  if (lower.includes("discovery")) {
+  if (
+    lower.includes("discovery")
+  ) {
     return "Discovery Place";
   }
 
@@ -441,213 +475,20 @@ function normalizeStop(text = "") {
   return null;
 }
 
-/* Square service functions
-   These stay here until Stage C.
-*/
-
-async function squareRequest(
-  endpoint,
-  method = "GET",
-  body = null
-) {
-  if (!SQUARE_ACCESS_TOKEN) {
-    throw new Error(
-      "SQUARE_ACCESS_TOKEN is missing"
-    );
-  }
-
-  const response = await fetch(
-    `${SQUARE_BASE_URL}${endpoint}`,
-    {
-      method,
-      headers: {
-        "Square-Version": "2026-05-20",
-        Authorization:
-          `Bearer ${SQUARE_ACCESS_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      body: body
-        ? JSON.stringify(body)
-        : undefined,
-    }
-  );
-
-  let data = {};
-
-  try {
-    data = await response.json();
-  } catch {
-    data = {};
-  }
-
-  if (!response.ok) {
-    console.error(
-      "Square API error:",
-      response.status,
-      JSON.stringify(data)
-    );
-
-    throw new Error(
-      "Square API request failed"
-    );
-  }
-
-  return data;
-}
-
-async function createSquarePaymentLink(
-  order
-) {
-  if (!SQUARE_LOCATION_ID) {
-    throw new Error(
-      "SQUARE_LOCATION_ID is missing"
-    );
-  }
-
-  const body = {
-    idempotency_key: order.order_id,
-
-    description:
-      `AAHAAR25 Lunch Box - ${order.name}`,
-
-    order: {
-      location_id: SQUARE_LOCATION_ID,
-
-      reference_id: order.order_id,
-
-      metadata: {
-        orderId: order.order_id,
-        customerName: order.name,
-        phone: order.phone,
-        day: order.day,
-        stop: order.stop,
-      },
-
-      line_items: [
-        {
-          name:
-            `AAHAAR25 Lunch Box - ` +
-            `${order.stop}`,
-
-          quantity: "1",
-
-          base_price_money: {
-            amount: 1399,
-            currency: "USD",
-          },
-        },
-      ],
-    },
-
-    checkout_options: {
-      allow_tipping: false,
-
-      redirect_url:
-        "https://aahaar25-chatbot-production.up.railway.app",
-    },
-
-    payment_note:
-      `AAHAAR25 order ${order.order_id}`,
-  };
-
-  const data = await squareRequest(
-    "/v2/online-checkout/payment-links",
-    "POST",
-    body
-  );
-
-  const paymentLink =
-    data.payment_link;
-
-  if (!paymentLink?.url) {
-    throw new Error(
-      "Square did not return a payment link"
-    );
-  }
-
-  return {
-    url: paymentLink.url,
-
-    paymentLinkId:
-      paymentLink.id || null,
-
-    squareOrderId:
-      paymentLink.order_id || null,
-  };
-}
-
-function verifySquareSignature(
-  rawBody,
-  signatureHeader
-) {
-  if (
-    !SQUARE_WEBHOOK_SIGNATURE_KEY ||
-    !signatureHeader
-  ) {
-    return false;
-  }
-
-  const hmac = crypto.createHmac(
-    "sha256",
-    SQUARE_WEBHOOK_SIGNATURE_KEY
-  );
-
-  hmac.update(
-    SQUARE_WEBHOOK_URL +
-      rawBody.toString("utf8")
-  );
-
-  const expectedDigest =
-    hmac.digest("base64");
-
-  const expectedBuffer =
-    Buffer.from(expectedDigest);
-
-  const receivedBuffer =
-    Buffer.from(signatureHeader);
-
-  if (
-    expectedBuffer.length !==
-    receivedBuffer.length
-  ) {
-    return false;
-  }
-
-  try {
-    return crypto.timingSafeEqual(
-      expectedBuffer,
-      receivedBuffer
-    );
-  } catch {
-    return false;
-  }
-}
-
-/* Main pages */
+/* Public pages */
 
 app.get("/", (req, res) => {
-  res.send(
-    "Ahaar25 chatbot backend is running " +
-      "with PostgreSQL orders and " +
-      "refactored WhatsApp routes."
-  );
-});
-
-app.get("/admin-login", (req, res) => {
-  res.sendFile(
-    path.join(
-      __dirname,
-      "public",
-      "admin.html"
-    )
+  return res.send(
+    "AAHAAR25 backend is running " +
+      "with PostgreSQL, WhatsApp, " +
+      "and Square services."
   );
 });
 
 app.get(
-  "/admin",
-  requireAdminPage,
+  "/admin-login",
   (req, res) => {
-    res.sendFile(
+    return res.sendFile(
       path.join(
         __dirname,
         "public",
@@ -657,84 +498,113 @@ app.get(
   }
 );
 
-app.get("/driver-login", (req, res) => {
-  res.sendFile(
-    path.join(
-      __dirname,
-      "public",
-      "driver.html"
-    )
-  );
-});
+app.get(
+  "/admin",
+  requireAdminPage,
+  (req, res) => {
+    return res.sendFile(
+      path.join(
+        __dirname,
+        "public",
+        "admin.html"
+      )
+    );
+  }
+);
 
-app.get("/driver", (req, res) => {
-  res.sendFile(
-    path.join(
-      __dirname,
-      "public",
-      "driver.html"
-    )
-  );
-});
+app.get(
+  "/driver-login",
+  (req, res) => {
+    return res.sendFile(
+      path.join(
+        __dirname,
+        "public",
+        "driver.html"
+      )
+    );
+  }
+);
+
+app.get(
+  "/driver",
+  (req, res) => {
+    return res.sendFile(
+      path.join(
+        __dirname,
+        "public",
+        "driver.html"
+      )
+    );
+  }
+);
 
 /* Admin login */
 
-app.post("/admin/login", async (req, res) => {
-  try {
-    const password = String(
-      req.body.password || ""
-    );
+app.post(
+  "/admin/login",
+  async (req, res) => {
+    try {
+      const password =
+        String(
+          req.body.password || ""
+        );
 
-    if (
-      !ADMIN_PASSWORD ||
-      password !== ADMIN_PASSWORD
-    ) {
-      return res.status(401).json({
+      if (
+        !ADMIN_PASSWORD ||
+        password !==
+          ADMIN_PASSWORD
+      ) {
+        return res
+          .status(401)
+          .json({
+            success: false,
+            error:
+              "Invalid admin password",
+          });
+      }
+
+      const token = crypto
+        .randomBytes(32)
+        .toString("hex");
+
+      await pool.query(
+        `
+        INSERT INTO admin_sessions (
+          token,
+          expires_at
+        )
+        VALUES (
+          $1,
+          NOW() + INTERVAL '8 hours'
+        )
+        `,
+        [token]
+      );
+
+      setCookie(
+        res,
+        "admin_session",
+        token,
+        8 * 60 * 60
+      );
+
+      return res.json({
+        success: true,
+      });
+    } catch (error) {
+      console.error(
+        "Admin login error:",
+        error.message
+      );
+
+      return res.status(500).json({
         success: false,
-        error: "Invalid admin password",
+        error:
+          "Admin login failed",
       });
     }
-
-    const token = crypto
-      .randomBytes(32)
-      .toString("hex");
-
-    await pool.query(
-      `
-      INSERT INTO admin_sessions (
-        token,
-        expires_at
-      )
-      VALUES (
-        $1,
-        NOW() + INTERVAL '8 hours'
-      )
-      `,
-      [token]
-    );
-
-    setCookie(
-      res,
-      "admin_session",
-      token,
-      8 * 60 * 60
-    );
-
-    return res.json({
-      success: true,
-    });
-  } catch (error) {
-    console.error(
-      "Admin login error:",
-      error.message
-    );
-
-    return res.status(500).json({
-      success: false,
-      error: "Admin login failed",
-    });
   }
-});
+);
 
 app.post(
   "/admin/logout",
@@ -787,33 +657,42 @@ app.post(
   "/driver/login",
   async (req, res) => {
     try {
-      const name = String(
-        req.body.name || ""
-      ).trim();
+      const name =
+        String(
+          req.body.name || ""
+        ).trim();
 
-      const password = String(
-        req.body.password || ""
-      );
+      const password =
+        String(
+          req.body.password || ""
+        );
 
-      const result = await pool.query(
-        `
-        SELECT *
-        FROM drivers
-        WHERE LOWER(name) = LOWER($1)
-          AND is_active = TRUE
-        LIMIT 1
-        `,
-        [name]
-      );
+      const result =
+        await pool.query(
+          `
+          SELECT *
+          FROM drivers
+          WHERE LOWER(name) =
+                LOWER($1)
+            AND is_active = TRUE
+          LIMIT 1
+          `,
+          [name]
+        );
 
-      if (result.rows.length === 0) {
-        return res.status(401).json({
-          success: false,
-          error: "Invalid login",
-        });
+      if (
+        result.rows.length === 0
+      ) {
+        return res
+          .status(401)
+          .json({
+            success: false,
+            error: "Invalid login",
+          });
       }
 
-      const driver = result.rows[0];
+      const driver =
+        result.rows[0];
 
       if (
         !verifyPassword(
@@ -821,10 +700,12 @@ app.post(
           driver.password_hash
         )
       ) {
-        return res.status(401).json({
-          success: false,
-          error: "Invalid login",
-        });
+        return res
+          .status(401)
+          .json({
+            success: false,
+            error: "Invalid login",
+          });
       }
 
       const token = crypto
@@ -844,7 +725,10 @@ app.post(
           NOW() + INTERVAL '8 hours'
         )
         `,
-        [token, driver.id]
+        [
+          token,
+          driver.id,
+        ]
       );
 
       await pool.query(
@@ -880,7 +764,8 @@ app.post(
 
       return res.status(500).json({
         success: false,
-        error: "Driver login failed",
+        error:
+          "Driver login failed",
       });
     }
   }
@@ -931,227 +816,71 @@ app.post(
   }
 );
 
-/* Square webhook
-   This stays in server.js until Stage C.
-*/
+/* Website chatbot */
 
 app.post(
-  "/square-webhook",
+  "/chat",
   async (req, res) => {
     try {
-      const rawBody = req.body;
-
-      const signature =
-        req.headers[
-          "x-square-hmacsha256-signature"
-        ];
-
-      if (
-        !verifySquareSignature(
-          rawBody,
-          signature
+      const userMessage =
+        String(
+          req.body.message || ""
         )
-      ) {
-        console.warn(
-          "Invalid Square webhook signature"
-        );
+          .trim()
+          .slice(0, 1000);
 
-        return res.sendStatus(401);
+      if (!userMessage) {
+        return res
+          .status(400)
+          .json({
+            reply:
+              "Please enter a message.",
+          });
       }
 
-      const event = JSON.parse(
-        rawBody.toString("utf8")
-      );
+      const response =
+        await client.responses.create({
+          model: "gpt-4o-mini",
+          input: userMessage,
+          max_output_tokens: 300,
+        });
 
-      if (
-        event.type !== "payment.updated" &&
-        event.type !== "payment.created"
-      ) {
-        return res.sendStatus(200);
-      }
-
-      const payment =
-        event.data?.object?.payment;
-
-      if (
-        !payment ||
-        payment.status !== "COMPLETED"
-      ) {
-        return res.sendStatus(200);
-      }
-
-      let orderResult =
-        await pool.query(
-          `
-          SELECT *
-          FROM orders
-          WHERE square_order_id = $1
-             OR square_payment_id = $2
-          LIMIT 1
-          `,
-          [
-            payment.order_id,
-            payment.id,
-          ]
-        );
-
-      if (
-        orderResult.rows.length === 0 &&
-        payment.order_id
-      ) {
-        const squareOrderData =
-          await squareRequest(
-            `/v2/orders/${payment.order_id}`
-          );
-
-        const referenceId =
-          squareOrderData.order
-            ?.reference_id;
-
-        if (referenceId) {
-          orderResult =
-            await pool.query(
-              `
-              SELECT *
-              FROM orders
-              WHERE order_id = $1
-              LIMIT 1
-              `,
-              [referenceId]
-            );
-        }
-      }
-
-      if (
-        orderResult.rows.length === 0
-      ) {
-        console.warn(
-          "No matching local order found " +
-            "for Square payment."
-        );
-
-        return res.sendStatus(200);
-      }
-
-      const order =
-        orderResult.rows[0];
-
-      if (
-        order.status === "confirmed" ||
-        order.status === "delivered"
-      ) {
-        return res.sendStatus(200);
-      }
-
-      const updated =
-        await pool.query(
-          `
-          UPDATE orders
-          SET
-            status = 'confirmed',
-            confirmed_at = NOW(),
-            square_payment_id = $1,
-            square_receipt_url = $2
-          WHERE order_id = $3
-          RETURNING *
-          `,
-          [
-            payment.id,
-            payment.receipt_url || "",
-            order.order_id,
-          ]
-        );
-
-      const confirmedOrder =
-        updated.rows[0];
-
-      await sendWhatsAppMessage(
-        confirmedOrder.phone,
-
-        `✅ Your AAHAAR25 order has been automatically confirmed.\n\n` +
-          `Name: ${confirmedOrder.name}\n` +
-          `Day: ${confirmedOrder.day}\n` +
-          `Stop: ${confirmedOrder.stop}\n\n` +
-          `You will receive delivery updates on WhatsApp.`
-      );
-
-      console.log(
-        "Order automatically confirmed:",
-        confirmedOrder.order_id
-      );
-
-      return res.sendStatus(200);
+      return res.json({
+        reply:
+          response.output_text,
+      });
     } catch (error) {
       console.error(
-        "Square webhook error:",
+        "Chat error:",
         error.message
       );
 
-      return res.sendStatus(500);
+      return res.status(500).json({
+        reply:
+          "Sorry, something went wrong. " +
+          "Please call AAHAAR25 directly.",
+      });
     }
   }
 );
 
-/* Website chatbot */
-
-app.post("/chat", async (req, res) => {
-  try {
-    const userMessage = String(
-      req.body.message || ""
-    )
-      .trim()
-      .slice(0, 1000);
-
-    if (!userMessage) {
-      return res.status(400).json({
-        reply:
-          "Please enter a message.",
-      });
-    }
-
-    const response =
-      await client.responses.create({
-        model: "gpt-4o-mini",
-        input: userMessage,
-        max_output_tokens: 300,
-      });
-
-    return res.json({
-      reply: response.output_text,
-    });
-  } catch (error) {
-    console.error(
-      "Chat error:",
-      error.message
-    );
-
-    return res.status(500).json({
-      reply:
-        "Sorry, something went wrong. " +
-        "Please call AAHAAR25 directly.",
-    });
-  }
-});
-
-/*
-THIS IS WHERE THE NEW WHATSAPP ROUTER IS ADDED.
-
-The router now handles:
-
-GET  /webhook
-POST /webhook
-
-It uses the functions you moved into:
-
-services/whatsappService.js
-routes/whatsappRoutes.js
-*/
+/* WhatsApp router */
 
 app.use(
   createWhatsAppRouter({
     pool,
     createSquarePaymentLink,
     generateOrderId,
+  })
+);
+
+/* Square webhook router */
+
+app.use(
+  "/square-webhook",
+  createSquareRouter({
+    pool,
+    sendWhatsAppMessage,
   })
 );
 
@@ -1162,23 +891,28 @@ app.get(
   requireAdmin,
   async (req, res) => {
     try {
-      const result = await pool.query(
-        `
-        SELECT *
-        FROM orders
-        ORDER BY created_at DESC
-        LIMIT 200
-        `
-      );
+      const result =
+        await pool.query(
+          `
+          SELECT *
+          FROM orders
+          ORDER BY created_at DESC
+          LIMIT 200
+          `
+        );
 
-      return res.json(result.rows);
+      return res.json(
+        result.rows
+      );
     } catch (error) {
       console.error(
         "Admin orders error:",
         error.message
       );
 
-      return res.status(500).json([]);
+      return res
+        .status(500)
+        .json([]);
     }
   }
 );
@@ -1209,7 +943,8 @@ app.post(
             [orderId]
           );
 
-        order = result.rows[0];
+        order =
+          result.rows[0];
       } else if (
         index !== undefined
       ) {
@@ -1237,25 +972,33 @@ app.post(
               WHERE order_id = $1
               RETURNING *
               `,
-              [selected.order_id]
+              [
+                selected.order_id,
+              ]
             );
 
-          order = result.rows[0];
+          order =
+            result.rows[0];
         }
       }
 
       if (!order) {
-        return res.status(400).json({
-          success: false,
-          error: "Invalid order",
-        });
+        return res
+          .status(400)
+          .json({
+            success: false,
+            error:
+              "Invalid order",
+          });
       }
 
       await sendWhatsAppMessage(
         order.phone,
 
         `✅ Your AAHAAR25 order has been confirmed.\n\n` +
-          `Day: ${order.day || "Today"}\n` +
+          `Day: ${
+            order.day || "Today"
+          }\n` +
           `Stop: ${order.stop}\n\n` +
           `You will receive delivery updates on WhatsApp.`
       );
@@ -1272,41 +1015,227 @@ app.post(
 
       return res.status(500).json({
         success: false,
-        error: "Could not confirm order",
+        error:
+          "Could not confirm order",
       });
     }
   }
 );
 
-/* Admin driver routes */
+app.post(
+  "/admin/cancel-order",
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const orderId =
+        String(
+          req.body.orderId || ""
+        ).trim();
+
+      if (!orderId) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            error:
+              "Missing order ID",
+          });
+      }
+
+      const result =
+        await pool.query(
+          `
+          SELECT *
+          FROM orders
+          WHERE order_id = $1
+          LIMIT 1
+          `,
+          [orderId]
+        );
+
+      if (
+        result.rows.length === 0
+      ) {
+        return res
+          .status(404)
+          .json({
+            success: false,
+            error:
+              "Order not found",
+          });
+      }
+
+      const order =
+        result.rows[0];
+
+      if (
+        order.status ===
+          "cancelled" ||
+        order.status ===
+          "refunded"
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            error:
+              "Order is already closed",
+          });
+      }
+
+      if (
+        !order.square_payment_id
+      ) {
+        const updated =
+          await pool.query(
+            `
+            UPDATE orders
+            SET status = 'cancelled'
+            WHERE order_id = $1
+            RETURNING *
+            `,
+            [orderId]
+          );
+
+        if (order.phone) {
+          await sendWhatsAppMessage(
+            order.phone,
+
+            `Your AAHAAR25 order has been cancelled.\n\n` +
+              `Day: ${order.day}\n` +
+              `Stop: ${order.stop}`
+          );
+        }
+
+        return res.json({
+          success: true,
+          refunded: false,
+          order:
+            updated.rows[0],
+        });
+      }
+
+      const payment =
+        await getSquarePayment(
+          order.square_payment_id
+        );
+
+      if (
+        !payment?.amount_money
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            error:
+              "Payment amount could not be found",
+          });
+      }
+
+      const refund =
+        await refundSquarePayment({
+          paymentId:
+            order.square_payment_id,
+
+          amountMoney:
+            payment.amount_money,
+        });
+
+      const refundStatus =
+        refund?.status ||
+        "PENDING";
+
+      const localStatus =
+        refundStatus ===
+        "COMPLETED"
+          ? "refunded"
+          : "refund_pending";
+
+      const updated =
+        await pool.query(
+          `
+          UPDATE orders
+          SET status = $1
+          WHERE order_id = $2
+          RETURNING *
+          `,
+          [
+            localStatus,
+            orderId,
+          ]
+        );
+
+      if (order.phone) {
+        await sendWhatsAppMessage(
+          order.phone,
+
+          `Your AAHAAR25 order was cancelled and a refund was requested.\n\n` +
+            `Day: ${order.day}\n` +
+            `Stop: ${order.stop}`
+        );
+      }
+
+      return res.json({
+        success: true,
+
+        refunded:
+          refundStatus ===
+          "COMPLETED",
+
+        refundStatus,
+
+        order:
+          updated.rows[0],
+      });
+    } catch (error) {
+      console.error(
+        "Cancel/refund error:",
+        error.message
+      );
+
+      return res.status(500).json({
+        success: false,
+        error:
+          "Cancel/refund failed",
+      });
+    }
+  }
+);
+
+/* Driver management */
 
 app.get(
   "/admin/drivers",
   requireAdmin,
   async (req, res) => {
     try {
-      const result = await pool.query(
-        `
-        SELECT
-          id,
-          name,
-          phone,
-          is_active,
-          created_at,
-          last_login
-        FROM drivers
-        ORDER BY created_at DESC
-        `
-      );
+      const result =
+        await pool.query(
+          `
+          SELECT
+            id,
+            name,
+            phone,
+            is_active,
+            created_at,
+            last_login
+          FROM drivers
+          ORDER BY created_at DESC
+          `
+        );
 
-      return res.json(result.rows);
+      return res.json(
+        result.rows
+      );
     } catch (error) {
       console.error(
         "Load drivers error:",
         error.message
       );
 
-      return res.status(500).json([]);
+      return res
+        .status(500)
+        .json([]);
     }
   }
 );
@@ -1316,68 +1245,73 @@ app.post(
   requireAdmin,
   async (req, res) => {
     try {
-      const name = String(
-        req.body.name || ""
-      )
-        .trim()
-        .slice(0, 80);
+      const name =
+        String(
+          req.body.name || ""
+        )
+          .trim()
+          .slice(0, 80);
 
-      const phone = String(
-        req.body.phone || ""
-      )
-        .trim()
-        .slice(0, 30);
+      const phone =
+        String(
+          req.body.phone || ""
+        )
+          .trim()
+          .slice(0, 30);
 
-      const password = String(
-        req.body.password || ""
-      );
+      const password =
+        String(
+          req.body.password || ""
+        );
 
       if (
         !name ||
         !password ||
         password.length < 4
       ) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Driver name and a password " +
-            "of at least four characters " +
-            "are required.",
-        });
+        return res
+          .status(400)
+          .json({
+            success: false,
+            error:
+              "Driver name and a password of at least four characters are required.",
+          });
       }
 
       const passwordHash =
         hashPassword(password);
 
-      const result = await pool.query(
-        `
-        INSERT INTO drivers (
-          name,
-          phone,
-          password_hash
-        )
-        VALUES (
-          $1,
-          $2,
-          $3
-        )
-        RETURNING
-          id,
-          name,
-          phone,
-          is_active,
-          created_at
-        `,
-        [
-          name,
-          phone || null,
-          passwordHash,
-        ]
-      );
+      const result =
+        await pool.query(
+          `
+          INSERT INTO drivers (
+            name,
+            phone,
+            password_hash
+          )
+          VALUES (
+            $1,
+            $2,
+            $3
+          )
+          RETURNING
+            id,
+            name,
+            phone,
+            is_active,
+            created_at
+          `,
+          [
+            name,
+            phone || null,
+            passwordHash,
+          ]
+        );
 
       return res.json({
         success: true,
-        driver: result.rows[0],
+        driver:
+          result.rows[0],
       });
     } catch (error) {
       console.error(
@@ -1388,14 +1322,19 @@ app.post(
       const duplicate =
         error.code === "23505";
 
-      return res.status(
-        duplicate ? 409 : 500
-      ).json({
-        success: false,
-        error: duplicate
-          ? "A driver with that name already exists."
-          : "Could not add driver",
-      });
+      return res
+        .status(
+          duplicate
+            ? 409
+            : 500
+        )
+        .json({
+          success: false,
+
+          error: duplicate
+            ? "A driver with that name already exists."
+            : "Could not add driver",
+        });
     }
   }
 );
@@ -1405,36 +1344,48 @@ app.post(
   requireAdmin,
   async (req, res) => {
     try {
-      const driverId = Number(
-        req.body.driverId
-      );
+      const driverId =
+        Number(
+          req.body.driverId
+        );
 
-      if (!Number.isInteger(driverId)) {
-        return res.status(400).json({
-          success: false,
-          error: "Invalid driver",
-        });
+      if (
+        !Number.isInteger(
+          driverId
+        )
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            error:
+              "Invalid driver",
+          });
       }
 
-      const result = await pool.query(
-        `
-        UPDATE drivers
-        SET is_active = FALSE
-        WHERE id = $1
-        RETURNING
-          id,
-          name,
-          phone,
-          is_active
-        `,
-        [driverId]
-      );
+      const result =
+        await pool.query(
+          `
+          UPDATE drivers
+          SET is_active = FALSE
+          WHERE id = $1
+          RETURNING
+            id,
+            name,
+            phone,
+            is_active
+          `,
+          [driverId]
+        );
 
       if (!result.rows[0]) {
-        return res.status(404).json({
-          success: false,
-          error: "Driver not found",
-        });
+        return res
+          .status(404)
+          .json({
+            success: false,
+            error:
+              "Driver not found",
+          });
       }
 
       await pool.query(
@@ -1447,7 +1398,8 @@ app.post(
 
       return res.json({
         success: true,
-        driver: result.rows[0],
+        driver:
+          result.rows[0],
       });
     } catch (error) {
       console.error(
@@ -1469,28 +1421,33 @@ app.get(
   requireAdmin,
   async (req, res) => {
     try {
-      const result = await pool.query(
-        `
-        SELECT *
-        FROM driver_activity
-        ORDER BY created_at DESC
-        LIMIT 100
-        `
-      );
+      const result =
+        await pool.query(
+          `
+          SELECT *
+          FROM driver_activity
+          ORDER BY created_at DESC
+          LIMIT 100
+          `
+        );
 
-      return res.json(result.rows);
+      return res.json(
+        result.rows
+      );
     } catch (error) {
       console.error(
         "Driver activity error:",
         error.message
       );
 
-      return res.status(500).json([]);
+      return res
+        .status(500)
+        .json([]);
     }
   }
 );
 
-/* Driver notification route */
+/* Driver notifications */
 
 app.post(
   "/driver/notify-stop",
@@ -1502,22 +1459,30 @@ app.post(
         status,
       } = req.body;
 
-      if (!stop || !status) {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Missing stop or status",
-        });
+      if (
+        !stop ||
+        !status
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            error:
+              "Missing stop or status",
+          });
       }
 
       const normalizedStop =
         normalizeStop(stop);
 
       if (!normalizedStop) {
-        return res.status(400).json({
-          success: false,
-          error: "Invalid stop",
-        });
+        return res
+          .status(400)
+          .json({
+            success: false,
+            error:
+              "Invalid stop",
+          });
       }
 
       const validStatuses = [
@@ -1528,66 +1493,61 @@ app.post(
       ];
 
       if (
-        !validStatuses.includes(status)
+        !validStatuses.includes(
+          status
+        )
       ) {
-        return res.status(400).json({
-          success: false,
-          error: "Invalid status",
-        });
+        return res
+          .status(400)
+          .json({
+            success: false,
+            error:
+              "Invalid status",
+          });
       }
 
-      const result = await pool.query(
-        `
-        SELECT *
-        FROM orders
-        WHERE status = 'confirmed'
-          AND LOWER(stop) = LOWER($1)
-        `,
-        [normalizedStop]
-      );
+      const result =
+        await pool.query(
+          `
+          SELECT *
+          FROM orders
+          WHERE status = 'confirmed'
+            AND LOWER(stop) =
+                LOWER($1)
+          `,
+          [normalizedStop]
+        );
 
       const customersAtStop =
         result.rows;
 
       if (
-        customersAtStop.length === 0
+        customersAtStop.length ===
+        0
       ) {
         return res.json({
           success: true,
           sentCount: 0,
           totalCustomers: 0,
+
           message:
-            `No confirmed customers found ` +
-            `for ${normalizedStop}`,
+            `No confirmed customers found for ${normalizedStop}`,
         });
       }
 
       const messages = {
         "10min":
-          `AAHAAR25 Update: Your lunch box ` +
-          `driver is about 10 minutes away ` +
-          `from ${normalizedStop}.`,
+          `AAHAAR25 Update: Your lunch box driver is about 10 minutes away from ${normalizedStop}.`,
 
         "5min":
-          `AAHAAR25 Update: Your lunch box ` +
-          `driver is about 5 minutes away ` +
-          `from ${normalizedStop}. Please be ` +
-          `ready at the delivery spot.`,
+          `AAHAAR25 Update: Your lunch box driver is about 5 minutes away from ${normalizedStop}. Please be ready at the delivery spot.`,
 
         arrived:
-          `AAHAAR25 Update: Your lunch box ` +
-          `driver has arrived at ` +
-          `${normalizedStop}. Please meet the ` +
-          `driver at the delivery spot.`,
+          `AAHAAR25 Update: Your lunch box driver has arrived at ${normalizedStop}. Please meet the driver at the delivery spot.`,
 
         delivered:
-          `AAHAAR25 Update: Your lunch box ` +
-          `has been delivered. Thank you for ` +
-          `ordering from AAHAAR25!`,
+          "AAHAAR25 Update: Your lunch box has been delivered. Thank you for ordering from AAHAAR25!",
       };
-
-      const whatsappMessage =
-        messages[status];
 
       let sentCount = 0;
 
@@ -1602,7 +1562,7 @@ app.post(
         const sendResult =
           await sendWhatsAppMessage(
             customer.phone,
-            whatsappMessage
+            messages[status]
           );
 
         if (sendResult.ok) {
@@ -1610,7 +1570,9 @@ app.post(
         }
       }
 
-      if (status === "delivered") {
+      if (
+        status === "delivered"
+      ) {
         await pool.query(
           `
           UPDATE orders
@@ -1618,7 +1580,8 @@ app.post(
             status = 'delivered',
             delivered_at = NOW()
           WHERE status = 'confirmed'
-            AND LOWER(stop) = LOWER($1)
+            AND LOWER(stop) =
+                LOWER($1)
           `,
           [normalizedStop]
         );
@@ -1660,6 +1623,7 @@ app.post(
         stop: normalizedStop,
         status,
         sentCount,
+
         totalCustomers:
           customersAtStop.length,
       });
@@ -1678,17 +1642,22 @@ app.post(
   }
 );
 
-/* Start server after PostgreSQL is ready */
+/* Start server */
 
 initializeDatabase()
   .then(() => {
-    app.listen(PORT, () => {
-      console.log(
-        `Server running on port ${PORT}`
-      );
+    app.listen(
+      PORT,
+      () => {
+        console.log(
+          `Server running on port ${PORT}`
+        );
 
-      console.log("Database ready");
-    });
+        console.log(
+          "Database ready"
+        );
+      }
+    );
   })
   .catch((error) => {
     console.error(
@@ -1698,7 +1667,9 @@ initializeDatabase()
 
     console.error(
       "DATABASE_URL exists:",
-      Boolean(process.env.DATABASE_URL)
+      Boolean(
+        process.env.DATABASE_URL
+      )
     );
 
     process.exit(1);
