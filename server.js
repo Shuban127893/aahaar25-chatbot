@@ -4,8 +4,13 @@ const path = require("path");
 const crypto = require("crypto");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
-const { Pool } = require("pg");
+
 require("dotenv").config();
+
+const pool = require("./config/database");
+const {
+  initializeDatabase,
+} = require("./database/initializeDatabase");
 
 const OpenAI = require("openai");
 
@@ -53,10 +58,7 @@ const SQUARE_BASE_URL =
 const SQUARE_WEBHOOK_URL =
   "https://aahaar25-chatbot-production.up.railway.app/square-webhook";
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
-});
+
 
 const userSessions = {};
 
@@ -80,73 +82,7 @@ function clearCookie(res, name) {
   );
 }
 
-async function initDatabase() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS orders (
-      id SERIAL PRIMARY KEY,
-      order_id TEXT UNIQUE NOT NULL,
-      name TEXT NOT NULL,
-      phone TEXT NOT NULL,
-      day TEXT,
-      stop TEXT,
-      status TEXT NOT NULL DEFAULT 'pending',
-      square_payment_link TEXT,
-      square_payment_link_id TEXT,
-      square_order_id TEXT,
-      square_payment_id TEXT UNIQUE,
-      square_receipt_url TEXT,
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      confirmed_at TIMESTAMPTZ,
-      delivered_at TIMESTAMPTZ
-    );
-  `);
 
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_orders_phone ON orders(phone);`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_orders_square_order_id ON orders(square_order_id);`);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS drivers (
-      id SERIAL PRIMARY KEY,
-      name TEXT UNIQUE NOT NULL,
-      phone TEXT,
-      password_hash TEXT NOT NULL,
-      is_active BOOLEAN DEFAULT TRUE,
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      last_login TIMESTAMPTZ
-    );
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS driver_sessions (
-      token TEXT PRIMARY KEY,
-      driver_id INTEGER REFERENCES drivers(id),
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      expires_at TIMESTAMPTZ NOT NULL
-    );
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS admin_sessions (
-      token TEXT PRIMARY KEY,
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      expires_at TIMESTAMPTZ NOT NULL
-    );
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS driver_activity (
-      id SERIAL PRIMARY KEY,
-      driver_id INTEGER REFERENCES drivers(id),
-      driver_name TEXT,
-      action TEXT NOT NULL,
-      stop TEXT,
-      status TEXT,
-      sent_count INTEGER DEFAULT 0,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    );
-  `);
-}
 
 function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString("hex");
@@ -1006,7 +942,7 @@ app.post("/driver/notify-stop", requireDriver, async (req, res) => {
   }
 });
 
-initDatabase()
+initializeDatabase()
   .then(() => {
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
