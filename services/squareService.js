@@ -1,12 +1,21 @@
 const crypto = require("crypto");
 
-const SQUARE_ACCESS_TOKEN = process.env.SQUARE_ACCESS_TOKEN;
-const SQUARE_LOCATION_ID = process.env.SQUARE_LOCATION_ID;
+const SQUARE_ACCESS_TOKEN =
+  process.env.SQUARE_ACCESS_TOKEN;
+
+const SQUARE_LOCATION_ID =
+  process.env.SQUARE_LOCATION_ID;
+
 const SQUARE_WEBHOOK_SIGNATURE_KEY =
   process.env.SQUARE_WEBHOOK_SIGNATURE_KEY;
 
 const SQUARE_ENVIRONMENT =
   process.env.SQUARE_ENVIRONMENT || "sandbox";
+
+const APP_BASE_URL = (
+  process.env.APP_BASE_URL ||
+  "https://aahaar25-chatbot-production.up.railway.app"
+).replace(/\/+$/, "");
 
 const SQUARE_BASE_URL =
   SQUARE_ENVIRONMENT === "production"
@@ -14,40 +23,8 @@ const SQUARE_BASE_URL =
     : "https://connect.squareupsandbox.com";
 
 const SQUARE_WEBHOOK_URL =
-  process.env.SQUARE_WEBHOOK_URL ||
-  "https://aahaar25-chatbot-production.up.railway.app/square-webhook";
+  `${APP_BASE_URL}/square-webhook`;
 
-const SQUARE_REDIRECT_URL =
-  process.env.SQUARE_REDIRECT_URL ||
-  "https://aahaar25-chatbot-production.up.railway.app";
-
-const SQUARE_VERSION =
-  process.env.SQUARE_VERSION || "2026-05-20";
-
-/**
- * Checks that the required Square environment variables exist.
- */
-function validateSquareConfiguration() {
-  const missingVariables = [];
-
-  if (!SQUARE_ACCESS_TOKEN) {
-    missingVariables.push("SQUARE_ACCESS_TOKEN");
-  }
-
-  if (!SQUARE_LOCATION_ID) {
-    missingVariables.push("SQUARE_LOCATION_ID");
-  }
-
-  if (missingVariables.length > 0) {
-    throw new Error(
-      `Missing Square environment variables: ${missingVariables.join(", ")}`
-    );
-  }
-}
-
-/**
- * Sends a request to the Square API.
- */
 async function squareRequest(
   endpoint,
   method = "GET",
@@ -55,7 +32,7 @@ async function squareRequest(
 ) {
   if (!SQUARE_ACCESS_TOKEN) {
     throw new Error(
-      "SQUARE_ACCESS_TOKEN is not configured"
+      "SQUARE_ACCESS_TOKEN is missing"
     );
   }
 
@@ -64,44 +41,38 @@ async function squareRequest(
     {
       method,
       headers: {
-        "Square-Version": SQUARE_VERSION,
-        Authorization: `Bearer ${SQUARE_ACCESS_TOKEN}`,
+        "Square-Version": "2026-05-20",
+        Authorization:
+          `Bearer ${SQUARE_ACCESS_TOKEN}`,
         "Content-Type": "application/json",
       },
-      body: body ? JSON.stringify(body) : undefined,
+      body: body
+        ? JSON.stringify(body)
+        : undefined,
     }
   );
 
-  const responseText = await response.text();
-
   let data = {};
 
-  if (responseText) {
-    try {
-      data = JSON.parse(responseText);
-    } catch {
-      data = {
-        rawResponse: responseText,
-      };
-    }
+  try {
+    data = await response.json();
+  } catch {
+    data = {};
   }
 
   if (!response.ok) {
     console.error(
-      "Square API error:",
+      "Square API request failed:",
       response.status,
       JSON.stringify(data)
     );
 
-    const squareErrorMessage =
-      data.errors?.[0]?.detail ||
-      data.errors?.[0]?.code ||
-      "Square API request failed";
-
-    const error = new Error(squareErrorMessage);
+    const error = new Error(
+      "Square API request failed"
+    );
 
     error.status = response.status;
-    error.squareErrors = data.errors || [];
+    error.squareResponse = data;
 
     throw error;
   }
@@ -109,28 +80,26 @@ async function squareRequest(
   return data;
 }
 
-/**
- * Creates a Square payment link for an AAHAAR25 order.
- */
-async function createSquarePaymentLink(order) {
-  validateSquareConfiguration();
-
-  if (
-    !order?.order_id ||
-    !order?.name ||
-    !order?.phone ||
-    !order?.day ||
-    !order?.stop
-  ) {
+async function createSquarePaymentLink(
+  order
+) {
+  if (!SQUARE_LOCATION_ID) {
     throw new Error(
-      "Order ID, name, phone, day, and stop are required"
+      "SQUARE_LOCATION_ID is missing"
+    );
+  }
+
+  if (!order?.order_id) {
+    throw new Error(
+      "Local order ID is missing"
     );
   }
 
   const requestBody = {
     idempotency_key: order.order_id,
 
-    description: `AAHAAR25 Lunch Box - ${order.name}`,
+    description:
+      `AAHAAR25 Lunch Box - ${order.name}`,
 
     order: {
       location_id: SQUARE_LOCATION_ID,
@@ -147,7 +116,8 @@ async function createSquarePaymentLink(order) {
 
       line_items: [
         {
-          name: `AAHAAR25 Lunch Box - ${order.stop}`,
+          name:
+            `AAHAAR25 Lunch Box - ${order.stop}`,
 
           quantity: "1",
 
@@ -161,8 +131,7 @@ async function createSquarePaymentLink(order) {
 
     checkout_options: {
       allow_tipping: false,
-
-      redirect_url: SQUARE_REDIRECT_URL,
+      redirect_url: APP_BASE_URL,
     },
 
     payment_note:
@@ -175,13 +144,30 @@ async function createSquarePaymentLink(order) {
     requestBody
   );
 
-  const paymentLink = data.payment_link;
+  const paymentLink =
+    data.payment_link;
 
   if (!paymentLink?.url) {
+    console.error(
+      "Square payment link response:",
+      JSON.stringify(data)
+    );
+
     throw new Error(
       "Square did not return a payment link"
     );
   }
+
+  console.log(
+    "Square payment link created:",
+    {
+      localOrderId: order.order_id,
+      squareOrderId:
+        paymentLink.order_id || null,
+      paymentLinkId:
+        paymentLink.id || null,
+    }
+  );
 
   return {
     url: paymentLink.url,
@@ -194,77 +180,87 @@ async function createSquarePaymentLink(order) {
   };
 }
 
-/**
- * Verifies that the Square webhook actually came from Square.
- */
 function verifySquareSignature(
   rawBody,
   signatureHeader
 ) {
-  if (
-    !SQUARE_WEBHOOK_SIGNATURE_KEY ||
-    !SQUARE_WEBHOOK_URL ||
-    !signatureHeader ||
-    !Buffer.isBuffer(rawBody)
-  ) {
+  if (!SQUARE_WEBHOOK_SIGNATURE_KEY) {
+    console.error(
+      "SQUARE_WEBHOOK_SIGNATURE_KEY is missing"
+    );
+
     return false;
   }
 
-  const hmac = crypto.createHmac(
-    "sha256",
-    SQUARE_WEBHOOK_SIGNATURE_KEY
-  );
+  if (!signatureHeader) {
+    console.error(
+      "Square signature header is missing"
+    );
 
-  hmac.update(
+    return false;
+  }
+
+  if (!Buffer.isBuffer(rawBody)) {
+    console.error(
+      "Square webhook body is not a Buffer"
+    );
+
+    return false;
+  }
+
+  const webhookBody =
+    rawBody.toString("utf8");
+
+  const signatureSource =
     SQUARE_WEBHOOK_URL +
-      rawBody.toString("utf8")
-  );
+    webhookBody;
 
   const expectedSignature =
-    hmac.digest("base64");
+    crypto
+      .createHmac(
+        "sha256",
+        SQUARE_WEBHOOK_SIGNATURE_KEY
+      )
+      .update(signatureSource)
+      .digest("base64");
 
   const expectedBuffer =
     Buffer.from(expectedSignature);
 
   const receivedBuffer =
-    Buffer.from(String(signatureHeader));
+    Buffer.from(
+      String(signatureHeader)
+    );
 
   if (
     expectedBuffer.length !==
     receivedBuffer.length
   ) {
+    console.error(
+      "Square signature lengths do not match"
+    );
+
     return false;
   }
 
-  return crypto.timingSafeEqual(
-    expectedBuffer,
-    receivedBuffer
-  );
-}
-
-/**
- * Gets a Square payment using its payment ID.
- */
-async function getSquarePayment(paymentId) {
-  if (!paymentId) {
-    throw new Error(
-      "Square payment ID is required"
+  try {
+    return crypto.timingSafeEqual(
+      expectedBuffer,
+      receivedBuffer
     );
+  } catch (error) {
+    console.error(
+      "Square signature comparison failed:",
+      error.message
+    );
+
+    return false;
   }
-
-  const data = await squareRequest(
-    `/v2/payments/${encodeURIComponent(
-      paymentId
-    )}`
-  );
-
-  return data.payment || null;
 }
 
-/**
- * Gets a Square order using its Square order ID.
- */
-async function getSquareOrder(squareOrderId) {
+async function getSquareOrder(
+  squareOrderId
+) {
   if (!squareOrderId) {
     throw new Error(
       "Square order ID is required"
@@ -280,21 +276,31 @@ async function getSquareOrder(squareOrderId) {
   return data.order || null;
 }
 
-/**
- * Refunds a Square payment.
- *
- * If amountMoney is not provided, the service retrieves
- * the original payment amount automatically.
- */
+async function getSquarePayment(
+  paymentId
+) {
+  if (!paymentId) {
+    throw new Error(
+      "Square payment ID is required"
+    );
+  }
+
+  const data = await squareRequest(
+    `/v2/payments/${encodeURIComponent(
+      paymentId
+    )}`
+  );
+
+  return data.payment || null;
+}
+
 async function refundSquarePayment({
   paymentId,
-
   amountMoney,
-
   reason =
     "AAHAAR25 order cancelled by administrator",
-
-  idempotencyKey = crypto.randomUUID(),
+  idempotencyKey =
+    crypto.randomUUID(),
 }) {
   if (!paymentId) {
     throw new Error(
@@ -302,23 +308,15 @@ async function refundSquarePayment({
     );
   }
 
-  let refundAmount = amountMoney;
-
-  if (!refundAmount) {
-    const payment =
-      await getSquarePayment(paymentId);
-
-    refundAmount =
-      payment?.amount_money;
-  }
-
   if (
-    !refundAmount ||
-    !Number.isInteger(refundAmount.amount) ||
-    !refundAmount.currency
+    !amountMoney ||
+    !Number.isInteger(
+      amountMoney.amount
+    ) ||
+    !amountMoney.currency
   ) {
     throw new Error(
-      "A valid Square refund amount was not available"
+      "A valid refund amount is required"
     );
   }
 
@@ -333,260 +331,49 @@ async function refundSquarePayment({
         paymentId,
 
       amount_money:
-        refundAmount,
+        amountMoney,
 
       reason,
     }
   );
 
-  if (!data.refund) {
-    throw new Error(
-      "Square did not return a refund"
-    );
-  }
-
-  return data.refund;
+  return data.refund || null;
 }
 
-/**
- * Finds the matching AAHAAR25 database order
- * for a completed Square payment.
- */
-async function findLocalOrderForPayment(
-  pool,
-  payment
-) {
-  let result = await pool.query(
-    `
-    SELECT *
-    FROM orders
-    WHERE square_order_id = $1
-       OR square_payment_id = $2
-    LIMIT 1
-    `,
-    [
-      payment.order_id || null,
-      payment.id,
-    ]
-  );
-
-  if (result.rows.length > 0) {
-    return result.rows[0];
-  }
-
-  if (!payment.order_id) {
-    return null;
-  }
-
-  const squareOrder =
-    await getSquareOrder(
-      payment.order_id
-    );
-
-  const referenceId =
-    squareOrder?.reference_id;
-
-  if (!referenceId) {
-    return null;
-  }
-
-  result = await pool.query(
-    `
-    SELECT *
-    FROM orders
-    WHERE order_id = $1
-    LIMIT 1
-    `,
-    [referenceId]
-  );
-
-  return result.rows[0] || null;
-}
-
-/**
- * Handles a Square webhook event.
- */
-async function processSquareWebhook({
-  rawBody,
-
-  signature,
-
-  pool,
-
-  sendWhatsAppMessage,
-}) {
-  const isValidSignature =
-    verifySquareSignature(
-      rawBody,
-      signature
-    );
-
-  if (!isValidSignature) {
-    return {
-      statusCode: 401,
-
-      message:
-        "Invalid Square webhook signature",
-    };
-  }
-
-  let event;
-
-  try {
-    event = JSON.parse(
-      rawBody.toString("utf8")
-    );
-  } catch {
-    return {
-      statusCode: 400,
-
-      message:
-        "Invalid Square webhook body",
-    };
-  }
-
-  const supportedEventTypes = [
-    "payment.updated",
-    "payment.created",
-  ];
-
-  if (
-    !supportedEventTypes.includes(
-      event.type
-    )
-  ) {
-    return {
-      statusCode: 200,
-
-      message:
-        "Square event ignored",
-    };
-  }
-
-  const payment =
-    event.data?.object?.payment;
-
-  if (
-    !payment ||
-    payment.status !== "COMPLETED"
-  ) {
-    return {
-      statusCode: 200,
-
-      message:
-        "Incomplete Square payment ignored",
-    };
-  }
-
-  const order =
-    await findLocalOrderForPayment(
-      pool,
-      payment
-    );
-
-  if (!order) {
-    console.warn(
-      "No matching local order found for Square payment:",
-      payment.id
-    );
-
-    return {
-      statusCode: 200,
-
-      message:
-        "No matching local order",
-    };
-  }
-
-  if (order.status === "confirmed") {
-    return {
-      statusCode: 200,
-
-      message:
-        "Order already confirmed",
-
-      order,
-    };
-  }
-
-  const updatedResult =
-    await pool.query(
-      `
-      UPDATE orders
-      SET status = 'confirmed',
-          confirmed_at = NOW(),
-          square_payment_id = $1,
-          square_receipt_url = $2
-      WHERE order_id = $3
-        AND status <> 'confirmed'
-      RETURNING *
-      `,
-      [
-        payment.id,
-
-        payment.receipt_url || "",
-
-        order.order_id,
-      ]
-    );
-
-  const confirmedOrder =
-    updatedResult.rows[0] || order;
-
-  if (
-    updatedResult.rows[0] &&
-    sendWhatsAppMessage
-  ) {
-    try {
-      await sendWhatsAppMessage(
-        confirmedOrder.phone,
-
-        `✅ Your AAHAAR25 order has been automatically confirmed.\n\n` +
-          `Name: ${confirmedOrder.name}\n` +
-          `Day: ${confirmedOrder.day}\n` +
-          `Stop: ${confirmedOrder.stop}\n\n` +
-          `You will receive delivery updates on WhatsApp.`
-      );
-    } catch (error) {
-      console.error(
-        "Payment confirmed, but WhatsApp confirmation failed:",
-        error.message
-      );
-    }
-  }
-
-  console.log(
-    "Order automatically confirmed:",
-    confirmedOrder.order_id
-  );
-
+function getSquareConfiguration() {
   return {
-    statusCode: 200,
+    environment:
+      SQUARE_ENVIRONMENT,
 
-    message:
-      "Order confirmed",
+    baseUrl:
+      SQUARE_BASE_URL,
 
-    order:
-      confirmedOrder,
+    webhookUrl:
+      SQUARE_WEBHOOK_URL,
+
+    hasAccessToken:
+      Boolean(
+        SQUARE_ACCESS_TOKEN
+      ),
+
+    hasLocationId:
+      Boolean(
+        SQUARE_LOCATION_ID
+      ),
+
+    hasSignatureKey:
+      Boolean(
+        SQUARE_WEBHOOK_SIGNATURE_KEY
+      ),
   };
 }
 
 module.exports = {
-  createSquarePaymentLink,
-
-  findLocalOrderForPayment,
-
-  getSquareOrder,
-
-  getSquarePayment,
-
-  processSquareWebhook,
-
-  refundSquarePayment,
-
   squareRequest,
-
-  validateSquareConfiguration,
-
+  createSquarePaymentLink,
   verifySquareSignature,
+  getSquareOrder,
+  getSquarePayment,
+  refundSquarePayment,
+  getSquareConfiguration,
 };
