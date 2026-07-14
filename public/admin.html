@@ -3029,6 +3029,24 @@
                   >
                 </div>
               </div>
+              <div class="field-group">
+  <label class="field-label" for="driverPassword">
+    Temporary driver password
+  </label>
+
+  <div class="input-shell">
+    <i class="fa-solid fa-lock"></i>
+
+    <input
+      class="field"
+      id="driverPassword"
+      type="password"
+      autocomplete="new-password"
+      placeholder="Enter at least 4 characters"
+      minlength="4"
+    >
+  </div>
+</div>
 
               <button
                 id="addDriverButton"
@@ -4153,128 +4171,178 @@
        ======================================================= */
 
     async function addDriver() {
-      const nameInput =
-        document.getElementById("driverName");
+  const nameInput =
+    document.getElementById("driverName");
 
-      const phoneInput =
-        document.getElementById("driverPhone");
+  const phoneInput =
+    document.getElementById("driverPhone");
 
-      const resultContainer =
-        document.getElementById("inviteResult");
+  const passwordInput =
+    document.getElementById("driverPassword");
 
-      const addButton =
-        document.getElementById("addDriverButton");
+  const resultContainer =
+    document.getElementById("inviteResult");
 
-      const name = nameInput.value.trim();
-      const phone = phoneInput.value.trim();
+  const addButton =
+    document.getElementById("addDriverButton");
 
-      resultContainer.innerHTML = "";
+  const name = nameInput.value.trim();
+  const phone = phoneInput.value.trim();
+  const password = passwordInput.value.trim();
 
-      if (!name || !phone) {
-        resultContainer.innerHTML = `
-          <div
-            class="invite-box"
-            style="
-              color:var(--red-600);
-              border-color:#ebaaa6;
-              background:var(--red-100);
-            "
-          >
-            <i class="fa-solid fa-circle-exclamation"></i>
-            Enter both the driver's name and WhatsApp phone number.
-          </div>
-        `;
+  resultContainer.innerHTML = "";
 
-        return;
-      }
+  if (!name) {
+    resultContainer.innerHTML = `
+      <div
+        class="invite-box"
+        style="
+          color:var(--red-600);
+          border-color:#ebaaa6;
+          background:var(--red-100);
+        "
+      >
+        <i class="fa-solid fa-circle-exclamation"></i>
+        Enter the driver's name.
+      </div>
+    `;
 
-      setButtonLoading(
-        addButton,
-        true,
-        "Creating driver"
-      );
+    nameInput.focus();
+    return;
+  }
 
-      try {
-        const result = await api("/admin/drivers", {
-          method: "POST",
+  if (!phone) {
+    resultContainer.innerHTML = `
+      <div
+        class="invite-box"
+        style="
+          color:var(--red-600);
+          border-color:#ebaaa6;
+          background:var(--red-100);
+        "
+      >
+        <i class="fa-solid fa-circle-exclamation"></i>
+        Enter the driver's WhatsApp phone number.
+      </div>
+    `;
 
-          body: JSON.stringify({
-            name,
-            phone
-          })
-        });
+    phoneInput.focus();
+    return;
+  }
 
-        nameInput.value = "";
-        phoneInput.value = "";
+  if (password.length < 4) {
+    resultContainer.innerHTML = `
+      <div
+        class="invite-box"
+        style="
+          color:var(--red-600);
+          border-color:#ebaaa6;
+          background:var(--red-100);
+        "
+      >
+        <i class="fa-solid fa-circle-exclamation"></i>
+        The driver password must contain at least 4 characters.
+      </div>
+    `;
 
-        resultContainer.innerHTML = `
-          <div class="invite-box">
-            <strong>
-              <i class="fa-solid fa-circle-check"></i>
-              ${
-                result.inviteSent
-                  ? "Invitation sent successfully"
-                  : "Driver invitation created"
-              }
-            </strong>
+    passwordInput.focus();
+    return;
+  }
 
-            <br>
+  setButtonLoading(
+    addButton,
+    true,
+    "Creating driver"
+  );
 
-            <span class="muted">
-              Backup login link:
-            </span>
+  try {
+    const result = await api("/admin/drivers", {
+      method: "POST",
 
-            <br>
+      body: JSON.stringify({
+        name,
+        phone,
+        password
+      })
+    });
 
-            <span>${escapeHtml(result.inviteUrl || "")}</span>
+    nameInput.value = "";
+    phoneInput.value = "";
+    passwordInput.value = "";
 
-            <br>
+    resultContainer.innerHTML = `
+      <div class="invite-box">
+        <strong>
+          <i class="fa-solid fa-circle-check"></i>
+          ${
+            result.inviteSent
+              ? "Invitation sent successfully"
+              : "Driver account created"
+          }
+        </strong>
 
-            <button
-              class="btn ghost small"
-              type="button"
-              style="margin-top:10px;"
-              onclick="copyText(
-                '${escapeAttribute(result.inviteUrl || "")}'
-              )"
-            >
-              <i class="fa-regular fa-copy"></i>
-              Copy backup link
-            </button>
-          </div>
-        `;
+        ${
+          result.inviteUrl
+            ? `
+              <br>
 
-        toast(
-          result.inviteSent
-            ? "Driver created and invitation sent."
-            : "Driver created successfully."
-        );
+              <span class="muted">
+                Backup login link:
+              </span>
 
-        await loadDrivers();
-      } catch (error) {
-        resultContainer.innerHTML = `
-          <div
-            class="invite-box"
-            style="
-              color:var(--red-600);
-              border-color:#ebaaa6;
-              background:var(--red-100);
-            "
-          >
-            <i class="fa-solid fa-circle-exclamation"></i>
-            ${escapeHtml(error.message)}
-          </div>
-        `;
-      } finally {
-        setButtonLoading(
-          addButton,
-          false,
-          "Create driver and send invitation",
-          "fa-solid fa-paper-plane"
-        );
-      }
-    }
+              <br>
 
+              <span>${escapeHtml(result.inviteUrl)}</span>
+
+              <br>
+
+              <button
+                class="btn ghost small"
+                type="button"
+                style="margin-top:10px;"
+                onclick="copyText(
+                  '${escapeAttribute(result.inviteUrl)}'
+                )"
+              >
+                <i class="fa-regular fa-copy"></i>
+                Copy backup link
+              </button>
+            `
+            : ""
+        }
+      </div>
+    `;
+
+    toast(
+      result.inviteSent
+        ? "Driver created and invitation sent."
+        : "Driver created successfully."
+    );
+
+    await loadDrivers();
+  } catch (error) {
+    resultContainer.innerHTML = `
+      <div
+        class="invite-box"
+        style="
+          color:var(--red-600);
+          border-color:#ebaaa6;
+          background:var(--red-100);
+        "
+      >
+        <i class="fa-solid fa-circle-exclamation"></i>
+        ${escapeHtml(error.message)}
+      </div>
+    `;
+  } finally {
+    setButtonLoading(
+      addButton,
+      false,
+      "Create driver and send invitation",
+      "fa-solid fa-paper-plane"
+    );
+  }
+}
     async function loadDrivers() {
       document.getElementById("driversGrid").innerHTML = `
         <div class="loading-placeholder">
