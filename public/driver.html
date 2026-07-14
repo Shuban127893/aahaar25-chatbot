@@ -339,17 +339,6 @@
         0 7px 15px rgba(236, 109, 19, 0.20);
     }
 
-    .day-tab.has-route::after {
-      display: block;
-      width: 5px;
-      height: 5px;
-      margin: 5px auto 0;
-      border-radius: 50%;
-      background: currentColor;
-      content: "";
-      opacity: 0.75;
-    }
-
     .route-head {
       display: flex;
       align-items: center;
@@ -370,8 +359,8 @@
     }
 
     .progress > div {
-      height: 100%;
       width: 0;
+      height: 100%;
       border-radius: inherit;
       background:
         linear-gradient(
@@ -554,13 +543,12 @@
 
       <div>
         <h2>AAHAAR25 Driver</h2>
+
         <div class="sub">
           Fast, secure route updates
         </div>
       </div>
     </div>
-
-    <!-- Driver login -->
 
     <section id="loginCard" class="card">
       <div id="phoneStep">
@@ -631,8 +619,6 @@
       <p id="loginMessage" class="sub"></p>
     </section>
 
-    <!-- Driver application -->
-
     <section id="driverApp" class="hidden">
       <section class="card hero">
         <div>
@@ -663,8 +649,6 @@
           Logout
         </button>
       </section>
-
-      <!-- Day selection -->
 
       <section class="card day-card">
         <div class="day-card-header">
@@ -714,8 +698,6 @@
         </div>
       </section>
 
-      <!-- Route progress -->
-
       <section class="card">
         <div class="route-head">
           <strong>
@@ -761,6 +743,7 @@
 
     let routeData = null;
     let selectedDay = getDefaultDeliveryDay();
+    let driverAuthenticatedOnThisPage = false;
 
     async function api(url, options = {}) {
       const response = await fetch(url, {
@@ -807,8 +790,34 @@
         document.getElementById("loginMessage");
 
       element.textContent = message;
+
       element.className =
         error ? "error" : "sub";
+    }
+
+    function showLoginScreen() {
+      driverAuthenticatedOnThisPage = false;
+      routeData = null;
+
+      document
+        .getElementById("driverApp")
+        .classList.add("hidden");
+
+      document
+        .getElementById("loginCard")
+        .classList.remove("hidden");
+
+      document
+        .getElementById("codeStep")
+        .classList.add("hidden");
+
+      document
+        .getElementById("phoneStep")
+        .classList.remove("hidden");
+
+      document.getElementById("code").value = "";
+
+      showMessage("");
     }
 
     async function requestCode() {
@@ -838,6 +847,7 @@
 
         await api("/driver/request-code", {
           method: "POST",
+
           body: JSON.stringify(payload)
         });
 
@@ -890,11 +900,15 @@
 
         await api("/driver/verify-code", {
           method: "POST",
+
           body: JSON.stringify(payload)
         });
 
+        driverAuthenticatedOnThisPage = true;
+
         await loadRoute(selectedDay);
       } catch (error) {
+        driverAuthenticatedOnThisPage = false;
         showMessage(error.message, true);
       }
     }
@@ -908,21 +922,32 @@
         .getElementById("phoneStep")
         .classList.remove("hidden");
 
+      document.getElementById("code").value = "";
+
       showMessage("");
     }
 
     async function selectDay(day) {
-      if (!deliveryDays.includes(day)) {
+      if (
+        !driverAuthenticatedOnThisPage ||
+        !deliveryDays.includes(day)
+      ) {
         return;
       }
 
       selectedDay = day;
 
       setActiveDayButton();
+
       await loadRoute(day);
     }
 
     async function loadRoute(day = selectedDay) {
+      if (!driverAuthenticatedOnThisPage) {
+        showLoginScreen();
+        return;
+      }
+
       const routeCards =
         document.getElementById("routeCards");
 
@@ -972,26 +997,8 @@
         setActiveDayButton();
         renderRoute();
       } catch (error) {
-        document
-          .getElementById("loginCard")
-          .classList.remove("hidden");
-
-        document
-          .getElementById("driverApp")
-          .classList.add("hidden");
-
-        if (
-          error.message
-            .toLowerCase()
-            .includes("login")
-        ) {
-          showMessage(
-            "Enter your approved phone number to sign in."
-          );
-
-          return;
-        }
-
+        driverAuthenticatedOnThisPage = false;
+        showLoginScreen();
         showMessage(error.message, true);
       }
     }
@@ -1039,10 +1046,9 @@
             </h2>
 
             <p class="sub">
-              You do not currently have any delivery stops
-              assigned for ${escapeHtml(routeData.day)}.
-              Select another day above or ask the administrator
-              to assign a route.
+              You do not currently have any delivery stops assigned for
+              ${escapeHtml(routeData.day)}. Select another day or ask the
+              administrator to assign a route.
             </p>
           </section>
         `;
@@ -1077,10 +1083,26 @@
         statusRank[assignment.route_status] || 0;
 
       const buttons = [
-        ["10min", "10 Minutes Away", "fa-solid fa-clock"],
-        ["5min", "5 Minutes Away", "fa-solid fa-truck-fast"],
-        ["arrived", "Arrived", "fa-solid fa-location-dot"],
-        ["delivered", "Delivered", "fa-solid fa-circle-check"]
+        [
+          "10min",
+          "10 Minutes Away",
+          "fa-solid fa-clock"
+        ],
+        [
+          "5min",
+          "5 Minutes Away",
+          "fa-solid fa-truck-fast"
+        ],
+        [
+          "arrived",
+          "Arrived",
+          "fa-solid fa-location-dot"
+        ],
+        [
+          "delivered",
+          "Delivered",
+          "fa-solid fa-circle-check"
+        ]
       ];
 
       return `
@@ -1146,6 +1168,16 @@
     }
 
     async function sendUpdate(stop, status) {
+      if (!driverAuthenticatedOnThisPage) {
+        showLoginScreen();
+        showMessage(
+          "Your driver session is no longer active. Sign in again.",
+          true
+        );
+
+        return;
+      }
+
       const label =
         labelStatus(status);
 
@@ -1210,12 +1242,15 @@
     }
 
     async function logout() {
-      await fetch("/driver/logout", {
-        method: "POST"
-      });
+      driverAuthenticatedOnThisPage = false;
 
-      window.location.href =
-        "/driver-login";
+      try {
+        await fetch("/driver/logout", {
+          method: "POST"
+        });
+      } finally {
+        showLoginScreen();
+      }
     }
 
     function labelStatus(status) {
@@ -1250,22 +1285,43 @@
         .replaceAll("\r", " ");
     }
 
-    if (invite) {
-      document
-        .getElementById("phone")
-        .classList.add("hidden");
+    async function initializeDriverPage() {
+      /*
+       * Driver security rule:
+       * Every full page load or refresh destroys the previous driver
+       * session. After the driver verifies their code, the page does not
+       * reload, so they can continue using the route panel normally.
+       */
+      try {
+        await fetch("/driver/logout", {
+          method: "POST"
+        });
+      } catch (error) {
+        console.error(
+          "Could not clear old driver session:",
+          error
+        );
+      }
 
-      document
-        .getElementById("loginIntro")
-        .textContent =
-          "Your secure invitation is ready. Tap below to receive a one-time WhatsApp code.";
+      showLoginScreen();
 
-      document
-        .getElementById("sendCodeBtn")
-        .innerHTML = `
-          <i class="fa-brands fa-whatsapp"></i>
-          Send my login code
-        `;
+      if (invite) {
+        document
+          .getElementById("phone")
+          .classList.add("hidden");
+
+        document
+          .getElementById("loginIntro")
+          .textContent =
+            "Your secure invitation is ready. Tap below to receive a one-time WhatsApp code.";
+
+        document
+          .getElementById("sendCodeBtn")
+          .innerHTML = `
+            <i class="fa-brands fa-whatsapp"></i>
+            Send my login code
+          `;
+      }
     }
 
     document
@@ -1284,7 +1340,7 @@
         }
       });
 
-    loadRoute(selectedDay);
+    initializeDriverPage();
   </script>
 </body>
 </html>
