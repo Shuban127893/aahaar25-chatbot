@@ -2,7 +2,9 @@ const pool = require("../config/database");
 
 async function initializeDatabase() {
   /*
-  Orders
+  ============================================================
+  ORDERS
+  ============================================================
   */
 
   await pool.query(`
@@ -26,8 +28,7 @@ async function initializeDatabase() {
   `);
 
   /*
-  Add any newer order columns safely
-  when upgrading an older database.
+  Upgrade older order tables safely.
   */
 
   await pool.query(`
@@ -86,7 +87,9 @@ async function initializeDatabase() {
   `);
 
   /*
-  Drivers
+  ============================================================
+  DRIVERS
+  ============================================================
   */
 
   await pool.query(`
@@ -105,8 +108,7 @@ async function initializeDatabase() {
   `);
 
   /*
-  These ALTER statements upgrade an existing
-  drivers table without deleting any drivers.
+  Upgrade older driver tables safely.
   */
 
   await pool.query(`
@@ -150,13 +152,41 @@ async function initializeDatabase() {
   `);
 
   /*
-  Do not create a unique phone index yet.
-  Your existing database contains duplicate
-  test phone numbers.
+  Driver passwords are no longer used.
+
+  Drivers now authenticate using temporary
+  WhatsApp verification codes, so this column
+  must allow NULL values.
+  */
+
+  await pool.query(`
+    ALTER TABLE drivers
+    ALTER COLUMN password_hash DROP NOT NULL;
+  `);
+
+  /*
+  Normalize any empty password values left
+  from the previous password-login system.
+  */
+
+  await pool.query(`
+    UPDATE drivers
+    SET password_hash = NULL
+    WHERE password_hash = '';
+  `);
+
+  /*
+  Do not add a unique database index on phone yet.
+
+  Older test data may contain duplicate phone
+  numbers. The admin route prevents new duplicate
+  phone numbers through application validation.
   */
 
   /*
-  Driver sessions
+  ============================================================
+  DRIVER SESSIONS
+  ============================================================
   */
 
   await pool.query(`
@@ -170,8 +200,20 @@ async function initializeDatabase() {
     );
   `);
 
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_driver_sessions_driver
+    ON driver_sessions(driver_id);
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_driver_sessions_expires
+    ON driver_sessions(expires_at);
+  `);
+
   /*
-  Admin sessions
+  ============================================================
+  ADMIN SESSIONS
+  ============================================================
   */
 
   await pool.query(`
@@ -182,8 +224,15 @@ async function initializeDatabase() {
     );
   `);
 
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires
+    ON admin_sessions(expires_at);
+  `);
+
   /*
-  Driver activity
+  ============================================================
+  DRIVER ACTIVITY
+  ============================================================
   */
 
   await pool.query(`
@@ -201,8 +250,15 @@ async function initializeDatabase() {
     );
   `);
 
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_driver_activity_created
+    ON driver_activity(created_at DESC);
+  `);
+
   /*
-  Future WhatsApp OTP login codes
+  ============================================================
+  DRIVER LOGIN CODES
+  ============================================================
   */
 
   await pool.query(`
@@ -224,8 +280,15 @@ async function initializeDatabase() {
     ON driver_login_codes(driver_id, expires_at);
   `);
 
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_driver_codes_expires
+    ON driver_login_codes(expires_at);
+  `);
+
   /*
-  Driver assignments
+  ============================================================
+  DRIVER ASSIGNMENTS
+  ============================================================
   */
 
   await pool.query(`
@@ -242,8 +305,15 @@ async function initializeDatabase() {
     );
   `);
 
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_driver_assignments_driver
+    ON driver_assignments(driver_id);
+  `);
+
   /*
-  Route progress
+  ============================================================
+  ROUTE PROGRESS
+  ============================================================
   */
 
   await pool.query(`
@@ -260,8 +330,15 @@ async function initializeDatabase() {
     );
   `);
 
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_route_progress_driver
+    ON route_progress(driver_id);
+  `);
+
   /*
-  Remove expired sessions and login codes.
+  ============================================================
+  CLEANUP EXPIRED AUTHENTICATION RECORDS
+  ============================================================
   */
 
   await pool.query(`
