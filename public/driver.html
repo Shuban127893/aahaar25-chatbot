@@ -1,117 +1,822 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>AAHAAR25 Driver Panel</title>
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+
+  <title>AAHAAR25 Driver</title>
+
   <style>
-    body { font-family: Arial, sans-serif; background: #fff7ed; padding: 20px; }
-    h1 { text-align: center; color: #b45309; }
-    #loginBox { max-width: 420px; margin: 80px auto; background: white; padding: 24px; border-radius: 16px; box-shadow: 0 8px 20px rgba(0,0,0,0.15); text-align: center; }
-    input { width: 90%; padding: 16px; font-size: 20px; border-radius: 10px; border: 1px solid #ccc; margin-bottom: 12px; text-align: center; }
-    #driverPanel { display: none; }
-    .stop-card { background: white; border-radius: 16px; padding: 20px; margin: 18px 0; box-shadow: 0 8px 20px rgba(0,0,0,0.15); }
-    button { width: 100%; padding: 18px; margin: 8px 0; font-size: 20px; border: none; border-radius: 12px; background: #f97316; color: white; font-weight: bold; }
-    .delivered { background: #16a34a; }
-    .logout { background: #dc2626; }
-    .message { margin-top: 10px; font-weight: bold; color: green; }
-    .error { color: red; font-weight: bold; }
+    :root {
+      --orange: #f97316;
+      --green: #15803d;
+      --red: #dc2626;
+      --cream: #fff7ed;
+      --brown: #4a2c1b;
+      --gray: #6b7280;
+      --border: #ead7c3;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background:
+        linear-gradient(
+          145deg,
+          #fffaf4,
+          #ffedd5
+        );
+      color: var(--brown);
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .page {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 18px;
+      min-height: 100vh;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .logo {
+      width: 54px;
+      height: 54px;
+      border-radius: 18px;
+      background:
+        linear-gradient(
+          135deg,
+          var(--orange),
+          #f59e0b
+        );
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 29px;
+      box-shadow:
+        0 9px 20px
+        rgba(249, 115, 22, 0.25);
+    }
+
+    .brand h2 {
+      margin: 0;
+    }
+
+    .subtitle {
+      color: var(--gray);
+    }
+
+    .card,
+    .stop-card {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      padding: 21px;
+      margin-bottom: 16px;
+      box-shadow:
+        0 10px 28px
+        rgba(0, 0, 0, 0.1);
+    }
+
+    input {
+      width: 100%;
+      padding: 15px;
+      margin: 7px 0;
+      border: 1px solid var(--border);
+      border-radius: 13px;
+      font-size: 17px;
+    }
+
+    button {
+      border: none;
+      border-radius: 14px;
+      padding: 15px;
+      font-weight: bold;
+      font-size: 17px;
+      background: var(--orange);
+      color: white;
+      cursor: pointer;
+    }
+
+    .full {
+      width: 100%;
+      margin-top: 9px;
+    }
+
+    .green {
+      background: var(--green);
+    }
+
+    .red {
+      background: var(--red);
+    }
+
+    .gray {
+      background: #64748b;
+    }
+
+    .used {
+      background: #dcfce7;
+      color: var(--green);
+      border: 1px solid #86efac;
+    }
+
+    .error {
+      color: var(--red);
+      font-weight: bold;
+    }
+
+    .success {
+      color: var(--green);
+      font-weight: bold;
+    }
+
+    .driver-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .route-badge {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #ffedd5;
+      color: #9a3412;
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    .progress-track {
+      height: 10px;
+      border-radius: 999px;
+      background: #e5e7eb;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 0;
+      background:
+        linear-gradient(
+          90deg,
+          var(--orange),
+          var(--green)
+        );
+      transition: width 0.25s;
+    }
+
+    .stop-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .count-badge {
+      background: #dcfce7;
+      color: #166534;
+      border-radius: 999px;
+      padding: 7px 10px;
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    .button-grid {
+      display: grid;
+      grid-template-columns:
+        1fr 1fr;
+      gap: 10px;
+      margin-top: 15px;
+    }
+
+    .message {
+      margin-top: 12px;
+      background: #fff7ed;
+      padding: 11px;
+      border-radius: 11px;
+      font-weight: bold;
+    }
+
+    .empty {
+      text-align: center;
+      color: var(--gray);
+    }
+
+    @media (max-width: 500px) {
+      .button-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .driver-header {
+        display: block;
+      }
+
+      .driver-header button {
+        width: 100%;
+        margin-top: 10px;
+      }
+    }
   </style>
 </head>
+
 <body>
-  <div id="loginBox">
-    <h1>AAHAAR25 Driver Login</h1>
-    <input id="driverName" placeholder="Driver Name">
-    <input id="driverPassword" type="password" placeholder="Password or PIN">
-    <button onclick="driverLogin()">Login</button>
-    <p id="loginError" class="error"></p>
-  </div>
+  <div class="page">
+    <div class="brand">
+      <div class="logo">🍱</div>
 
-  <div id="driverPanel">
-    <h1>AAHAAR25 Driver Panel</h1>
-    <p id="welcome"></p>
-    <button class="logout" onclick="logout()">Logout</button>
+      <div>
+        <h2>AAHAAR25 Driver</h2>
 
-    <div class="stop-card">
-      <h2>Gateway Village</h2>
-      <button onclick="notifyStop('Gateway Village', '10min')">10 Min Away</button>
-      <button onclick="notifyStop('Gateway Village', '5min')">5 Min Away</button>
-      <button onclick="notifyStop('Gateway Village', 'arrived')">Arrived</button>
-      <button class="delivered" onclick="notifyStop('Gateway Village', 'delivered')">Delivered</button>
-      <p class="message" id="Gateway Village-msg"></p>
+        <div class="subtitle">
+          Delivery notification panel
+        </div>
+      </div>
     </div>
 
-    <div class="stop-card">
-      <h2>Discovery Place</h2>
-      <button onclick="notifyStop('Discovery Place', '10min')">10 Min Away</button>
-      <button onclick="notifyStop('Discovery Place', '5min')">5 Min Away</button>
-      <button onclick="notifyStop('Discovery Place', 'arrived')">Arrived</button>
-      <button class="delivered" onclick="notifyStop('Discovery Place', 'delivered')">Delivered</button>
-      <p class="message" id="Discovery Place-msg"></p>
-    </div>
+    <section
+      id="loginCard"
+      class="card"
+    >
+      <h1>Driver Login</h1>
 
-    <div class="stop-card">
-      <h2>Ally Center</h2>
-      <button onclick="notifyStop('Ally Center', '10min')">10 Min Away</button>
-      <button onclick="notifyStop('Ally Center', '5min')">5 Min Away</button>
-      <button onclick="notifyStop('Ally Center', 'arrived')">Arrived</button>
-      <button class="delivered" onclick="notifyStop('Ally Center', 'delivered')">Delivered</button>
-      <p class="message" id="Ally Center-msg"></p>
-    </div>
+      <p class="subtitle">
+        Enter the driver name and password
+        created by the administrator.
+      </p>
 
-    <div class="stop-card">
-      <h2>One Wells Fargo</h2>
-      <button onclick="notifyStop('One Wells Fargo', '10min')">10 Min Away</button>
-      <button onclick="notifyStop('One Wells Fargo', '5min')">5 Min Away</button>
-      <button onclick="notifyStop('One Wells Fargo', 'arrived')">Arrived</button>
-      <button class="delivered" onclick="notifyStop('One Wells Fargo', 'delivered')">Delivered</button>
-      <p class="message" id="One Wells Fargo-msg"></p>
-    </div>
+      <input
+        id="driverNameInput"
+        placeholder="Driver name"
+      >
+
+      <input
+        id="driverPasswordInput"
+        type="password"
+        placeholder="Password or PIN"
+      >
+
+      <button
+        class="full"
+        onclick="driverLogin()"
+      >
+        Login
+      </button>
+
+      <p id="loginMessage"></p>
+    </section>
+
+    <section
+      id="driverApp"
+      class="hidden"
+    >
+      <div class="card">
+        <div class="driver-header">
+          <div>
+            <span class="route-badge">
+              ACTIVE ROUTE
+            </span>
+
+            <h1>
+              Welcome,
+              <span id="driverName"></span>
+            </h1>
+
+            <p class="subtitle">
+              <span id="routeDay"></span>
+              —
+              <span id="assignmentCount">
+                0
+              </span>
+              assigned stop(s)
+            </p>
+          </div>
+
+          <button
+            class="red"
+            onclick="logout()"
+          >
+            Logout
+          </button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div
+          style="
+            display:flex;
+            justify-content:space-between;
+            gap:10px;
+            margin-bottom:10px;
+          "
+        >
+          <b>Route Progress</b>
+
+          <span
+            id="progressText"
+            class="subtitle"
+          >
+            0 of 0 delivered
+          </span>
+        </div>
+
+        <div class="progress-track">
+          <div
+            id="progressFill"
+            class="progress-fill"
+          ></div>
+        </div>
+      </div>
+
+      <div id="routeCards"></div>
+    </section>
   </div>
 
   <script>
-    async function driverLogin() {
-      const name = document.getElementById("driverName").value;
-      const password = document.getElementById("driverPassword").value;
+    let routeData = null;
 
-      const res = await fetch("/driver/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, password })
-      });
+    const STATUS_LEVEL = {
+      not_started: 0,
+      "10min": 1,
+      "5min": 2,
+      arrived: 3,
+      delivered: 4
+    };
 
-      const data = await res.json();
+    async function apiRequest(
+      url,
+      options = {}
+    ) {
+      const response = await fetch(
+        url,
+        {
+          ...options,
 
-      if (data.success) {
-        document.getElementById("loginBox").style.display = "none";
-        document.getElementById("driverPanel").style.display = "block";
-        document.getElementById("welcome").textContent = "Logged in as " + data.driver.name;
-      } else {
-        document.getElementById("loginError").textContent = "Wrong name or password.";
+          headers: {
+            "Content-Type":
+              "application/json",
+
+            ...(options.headers || {})
+          }
+        }
+      );
+
+      let data = {};
+
+      try {
+        data = await response.json();
+      } catch {
+        data = {};
       }
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+          "Request failed."
+        );
+      }
+
+      return data;
+    }
+
+    async function driverLogin() {
+      const name =
+        document.getElementById(
+          "driverNameInput"
+        ).value.trim();
+
+      const password =
+        document.getElementById(
+          "driverPasswordInput"
+        ).value;
+
+      const message =
+        document.getElementById(
+          "loginMessage"
+        );
+
+      message.textContent =
+        "Signing in...";
+
+      try {
+        await apiRequest(
+          "/driver/login",
+          {
+            method: "POST",
+
+            body: JSON.stringify({
+              name,
+              password
+            })
+          }
+        );
+
+        message.textContent = "";
+
+        await loadRoute();
+      } catch (error) {
+        message.className = "error";
+
+        message.textContent =
+          error.message;
+      }
+    }
+
+    async function loadRoute() {
+      try {
+        routeData =
+          await apiRequest(
+            "/driver/me"
+          );
+
+        document
+          .getElementById(
+            "loginCard"
+          )
+          .classList.add(
+            "hidden"
+          );
+
+        document
+          .getElementById(
+            "driverApp"
+          )
+          .classList.remove(
+            "hidden"
+          );
+
+        document
+          .getElementById(
+            "driverName"
+          )
+          .textContent =
+            routeData.driver.name;
+
+        document
+          .getElementById(
+            "routeDay"
+          )
+          .textContent =
+            routeData.day;
+
+        document
+          .getElementById(
+            "assignmentCount"
+          )
+          .textContent =
+            routeData.assignments.length;
+
+        renderRoute();
+      } catch (error) {
+        document
+          .getElementById(
+            "loginCard"
+          )
+          .classList.remove(
+            "hidden"
+          );
+
+        document
+          .getElementById(
+            "driverApp"
+          )
+          .classList.add(
+            "hidden"
+          );
+      }
+    }
+
+    function renderRoute() {
+      const assignments =
+        routeData.assignments || [];
+
+      const container =
+        document.getElementById(
+          "routeCards"
+        );
+
+      if (
+        assignments.length === 0
+      ) {
+        container.innerHTML = `
+          <div class="card empty">
+            <h2>No assigned stops</h2>
+
+            <p>
+              Ask the administrator to assign
+              you a stop for ${escapeHtml(
+                routeData.day
+              )}.
+            </p>
+          </div>
+        `;
+
+        updateProgress();
+
+        return;
+      }
+
+      container.innerHTML =
+        assignments
+          .map(createStopCard)
+          .join("");
+
+      updateProgress();
+    }
+
+    function createStopCard(
+      assignment
+    ) {
+      const currentLevel =
+        STATUS_LEVEL[
+          assignment.route_status
+        ] || 0;
+
+      const buttons = [
+        {
+          status: "10min",
+          label: "10 Minutes Away"
+        },
+        {
+          status: "5min",
+          label: "5 Minutes Away"
+        },
+        {
+          status: "arrived",
+          label: "Arrived"
+        },
+        {
+          status: "delivered",
+          label: "Delivered"
+        }
+      ];
+
+      return `
+        <article class="stop-card">
+          <div class="stop-top">
+            <div>
+              <h2>
+                ${escapeHtml(
+                  assignment.stop
+                )}
+              </h2>
+
+              <p class="subtitle">
+                ${escapeHtml(
+                  assignment.time || ""
+                )}
+              </p>
+            </div>
+
+            <span class="count-badge">
+              ${Number(
+                assignment.confirmed_count ||
+                0
+              )}
+              confirmed
+            </span>
+          </div>
+
+          <div class="button-grid">
+            ${
+              buttons
+                .map((button) => {
+                  const used =
+                    currentLevel >=
+                    STATUS_LEVEL[
+                      button.status
+                    ];
+
+                  return `
+                    <button
+                      class="${
+                        button.status ===
+                        "delivered"
+                          ? "green"
+                          : ""
+                      } ${
+                        used
+                          ? "used"
+                          : ""
+                      }"
+                      onclick="notifyStop(
+                        '${escapeHtml(
+                          assignment.stop
+                        )}',
+                        '${button.status}'
+                      )"
+                    >
+                      ${
+                        used
+                          ? "✓ "
+                          : ""
+                      }
+                      ${button.label}
+                    </button>
+                  `;
+                })
+                .join("")
+            }
+          </div>
+
+          <div
+            id="message-${slug(
+              assignment.stop
+            )}"
+            class="message"
+          >
+            Current status:
+            ${labelStatus(
+              assignment.route_status
+            )}
+          </div>
+        </article>
+      `;
+    }
+
+    async function notifyStop(
+      stop,
+      status
+    ) {
+      const label =
+        labelStatus(status);
+
+      const approved =
+        confirm(
+          `Send "${label}" to all confirmed customers at ${stop}?`
+        );
+
+      if (!approved) {
+        return;
+      }
+
+      const messageBox =
+        document.getElementById(
+          `message-${slug(stop)}`
+        );
+
+      messageBox.textContent =
+        "Sending...";
+
+      try {
+        const data =
+          await apiRequest(
+            "/driver/notify-stop",
+            {
+              method: "POST",
+
+              body: JSON.stringify({
+                day: routeData.day,
+                stop,
+                status
+              })
+            }
+          );
+
+        messageBox.className =
+          "message success";
+
+        messageBox.textContent =
+          `${label} sent to ` +
+          `${data.sentCount} customer(s).`;
+
+        const assignment =
+          routeData.assignments.find(
+            (item) =>
+              item.stop === stop
+          );
+
+        if (assignment) {
+          assignment.route_status =
+            status;
+        }
+
+        renderRoute();
+      } catch (error) {
+        messageBox.className =
+          "message error";
+
+        messageBox.textContent =
+          error.message;
+      }
+    }
+
+    function updateProgress() {
+      const assignments =
+        routeData.assignments || [];
+
+      const delivered =
+        assignments.filter(
+          (assignment) =>
+            assignment.route_status ===
+            "delivered"
+        ).length;
+
+      const total =
+        assignments.length;
+
+      document
+        .getElementById(
+          "progressText"
+        )
+        .textContent =
+          `${delivered} of ` +
+          `${total} delivered`;
+
+      const percent =
+        total === 0
+          ? 0
+          : (
+              delivered /
+              total
+            ) * 100;
+
+      document
+        .getElementById(
+          "progressFill"
+        )
+        .style.width =
+          `${percent}%`;
     }
 
     async function logout() {
-      await fetch("/driver/logout", { method: "POST" });
-      location.href = "/driver-login";
+      await fetch(
+        "/driver/logout",
+        {
+          method: "POST"
+        }
+      );
+
+      location.href =
+        "/driver-login";
     }
 
-    async function notifyStop(stop, status) {
-      const messageBox = document.getElementById(stop + "-msg");
-      messageBox.textContent = "Sending...";
+    function labelStatus(status) {
+      const labels = {
+        not_started:
+          "Not started",
 
-      const response = await fetch("/driver/notify-stop", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stop, status })
-      });
+        "10min":
+          "10-minute notice sent",
 
-      const data = await response.json();
+        "5min":
+          "5-minute notice sent",
 
-      if (data.success) {
-        messageBox.textContent = `Sent to ${data.sentCount} customer(s).`;
-      } else {
-        messageBox.textContent = data.error || "Error sending message.";
-      }
+        arrived:
+          "Driver arrived",
+
+        delivered:
+          "Delivered"
+      };
+
+      return (
+        labels[status] ||
+        status ||
+        "Not started"
+      );
     }
+
+    function slug(value) {
+      return String(value)
+        .toLowerCase()
+        .replace(
+          /[^a-z0-9]+/g,
+          "-"
+        );
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    loadRoute();
   </script>
 </body>
 </html>
