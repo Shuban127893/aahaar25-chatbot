@@ -1,58 +1,103 @@
 const crypto = require("crypto");
 
-function hashPassword(password) {
-  const salt = crypto
-    .randomBytes(16)
-    .toString("hex");
+/*
+Normalize United States phone numbers.
 
-  const hash = crypto
-    .pbkdf2Sync(
-      password,
-      salt,
-      100000,
-      64,
-      "sha512"
-    )
-    .toString("hex");
+Examples:
 
-  return `${salt}:${hash}`;
+(978) 555-1234
+978-555-1234
++1 978 555 1234
+
+All become:
+
+19785551234
+*/
+
+function normalizePhone(value = "") {
+  let digits = String(value)
+    .replace(/\D/g, "");
+
+  if (digits.length === 10) {
+    digits = `1${digits}`;
+  }
+
+  return digits;
 }
 
-function verifyPassword(
-  password,
-  storedPasswordHash
+/*
+Generate a random six-digit
+temporary login code.
+*/
+
+function generateSixDigitCode() {
+  return String(
+    crypto.randomInt(
+      100000,
+      1000000
+    )
+  );
+}
+
+/*
+Hash a temporary login code before
+saving it in PostgreSQL.
+*/
+
+function hashOneTimeCode(
+  code,
+  secret
+) {
+  if (!secret) {
+    throw new Error(
+      "OTP secret is required"
+    );
+  }
+
+  return crypto
+    .createHmac(
+      "sha256",
+      secret
+    )
+    .update(String(code))
+    .digest("hex");
+}
+
+/*
+Safely compare a submitted code
+with its stored hash.
+*/
+
+function verifyOneTimeCodeHash(
+  code,
+  expectedHash,
+  secret
 ) {
   if (
-    !storedPasswordHash ||
-    !storedPasswordHash.includes(":")
+    !code ||
+    !expectedHash ||
+    !secret
   ) {
     return false;
   }
 
-  const [
-    salt,
-    originalHash,
-  ] = storedPasswordHash.split(":");
-
-  if (!salt || !originalHash) {
-    return false;
-  }
-
-  const calculatedHash = crypto
-    .pbkdf2Sync(
-      password,
-      salt,
-      100000,
-      64,
-      "sha512"
-    )
-    .toString("hex");
+  const calculatedHash =
+    hashOneTimeCode(
+      code,
+      secret
+    );
 
   const expectedBuffer =
-    Buffer.from(originalHash);
+    Buffer.from(
+      expectedHash,
+      "hex"
+    );
 
   const receivedBuffer =
-    Buffer.from(calculatedHash);
+    Buffer.from(
+      calculatedHash,
+      "hex"
+    );
 
   if (
     expectedBuffer.length !==
@@ -71,63 +116,122 @@ function verifyPassword(
   }
 }
 
-async function findActiveDriverByName(
+/*
+Find exactly one active driver
+associated with the submitted
+phone number.
+
+Returning null when duplicate phone
+numbers exist prevents the wrong
+driver account from being opened.
+*/
+
+async function findActiveDriverByPhone(
   pool,
-  name
+  phone
 ) {
+  const normalizedPhone =
+    normalizePhone(phone);
+
+  if (
+    normalizedPhone.length < 10
+  ) {
+    return null;
+  }
+
   const result = await pool.query(
     `
-    SELECT *
+    SELECT
+      id,
+      name,
+      phone,
+      is_active,
+      created_at,
+      last_login,
+      phone_verified_at
+
     FROM drivers
-    WHERE LOWER(name) = LOWER($1)
-      AND is_active = TRUE
-    LIMIT 1
-    `,
-    [name]
+
+    WHERE
+      is_active = TRUE
+      AND phone IS NOT NULL
+
+    ORDER BY id ASC
+    `
   );
 
-  return result.rows[0] || null;
+  const matches =
+    result.rows.filter(
+      (driver) =>
+        normalizePhone(
+          driver.phone
+        ) === normalizedPhone
+    );
+
+  if (matches.length !== 1) {
+    return null;
+  }
+
+  return matches[0];
 }
 
-async function authenticateDriver(
+/*
+Check whether another driver already
+uses a phone number.
+
+The optional excludedDriverId is useful
+when editing an existing driver later.
+*/
+
+async function driverPhoneExists(
   pool,
-  name,
-  password
+  phone,
+  excludedDriverId = null
 ) {
-  const cleanName = String(
-    name || ""
-  ).trim();
+  const normalizedPhone =
+    normalizePhone(phone);
 
-  const cleanPassword = String(
-    password || ""
+  if (
+    normalizedPhone.length < 10
+  ) {
+    return false;
+  }
+
+  const result = await pool.query(
+    `
+    SELECT
+      id,
+      phone
+
+    FROM drivers
+
+    WHERE phone IS NOT NULL
+    `
   );
 
-  if (!cleanName || !cleanPassword) {
-    return null;
-  }
+  return result.rows.some(
+    (driver) => {
+      if (
+        excludedDriverId !== null &&
+        Number(driver.id) ===
+          Number(excludedDriverId)
+      ) {
+        return false;
+      }
 
-  const driver =
-    await findActiveDriverByName(
-      pool,
-      cleanName
-    );
-
-  if (!driver) {
-    return null;
-  }
-
-  const passwordIsValid =
-    verifyPassword(
-      cleanPassword,
-      driver.password_hash
-    );
-
-  if (!passwordIsValid) {
-    return null;
-  }
-
-  return driver;
+      return (
+        normalizePhone(
+          driver.phone
+        ) === normalizedPhone
+      );
+    }
+  );
 }
+
+/*
+Create a temporary authenticated
+driver session.
+*/
 
 async function createDriverSession(
   pool,
@@ -161,7 +265,15 @@ async function createDriverSession(
   await pool.query(
     `
     UPDATE drivers
-    SET last_login = NOW()
+
+    SET
+      last_login = NOW(),
+      phone_verified_at =
+        COALESCE(
+          phone_verified_at,
+          NOW()
+        )
+
     WHERE id = $1
     `,
     [driverId]
@@ -169,6 +281,10 @@ async function createDriverSession(
 
   return token;
 }
+
+/*
+Delete one browser session.
+*/
 
 async function deleteDriverSession(
   pool,
@@ -187,6 +303,11 @@ async function deleteDriverSession(
   );
 }
 
+/*
+Delete every session belonging
+to one driver.
+*/
+
 async function deleteAllDriverSessions(
   pool,
   driverId
@@ -200,42 +321,33 @@ async function deleteAllDriverSessions(
   );
 }
 
-function generateSixDigitCode() {
-  return String(
-    crypto.randomInt(
-      100000,
-      1000000
-    )
+/*
+Delete every unused login code
+belonging to one driver.
+*/
+
+async function deleteAllDriverLoginCodes(
+  pool,
+  driverId
+) {
+  await pool.query(
+    `
+    DELETE FROM driver_login_codes
+    WHERE driver_id = $1
+    `,
+    [driverId]
   );
 }
 
-function hashOneTimeCode(
-  code,
-  secret
-) {
-  if (!secret) {
-    throw new Error(
-      "OTP secret is required"
-    );
-  }
-
-  return crypto
-    .createHmac(
-      "sha256",
-      secret
-    )
-    .update(String(code))
-    .digest("hex");
-}
-
 module.exports = {
-  hashPassword,
-  verifyPassword,
-  findActiveDriverByName,
-  authenticateDriver,
+  normalizePhone,
+  generateSixDigitCode,
+  hashOneTimeCode,
+  verifyOneTimeCodeHash,
+  findActiveDriverByPhone,
+  driverPhoneExists,
   createDriverSession,
   deleteDriverSession,
   deleteAllDriverSessions,
-  generateSixDigitCode,
-  hashOneTimeCode,
+  deleteAllDriverLoginCodes,
 };

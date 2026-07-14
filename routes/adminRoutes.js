@@ -3,8 +3,10 @@ const crypto = require("crypto");
 const rateLimit = require("express-rate-limit");
 
 const {
-  hashPassword,
+  normalizePhone,
+  driverPhoneExists,
   deleteAllDriverSessions,
+  deleteAllDriverLoginCodes,
 } = require("../services/driverAuthService");
 
 const {
@@ -27,17 +29,23 @@ function createAdminRouter({
     process.env.ADMIN_PASSWORD ||
     process.env.ADMIN_API_KEY;
 
-  const adminLoginLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 10,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: {
-      success: false,
-      error:
-        "Too many login attempts. Try again later.",
-    },
-  });
+  const adminLoginLimiter =
+    rateLimit({
+      windowMs:
+        15 * 60 * 1000,
+
+      max: 10,
+
+      standardHeaders: true,
+      legacyHeaders: false,
+
+      message: {
+        success: false,
+
+        error:
+          "Too many login attempts. Try again later.",
+      },
+    });
 
   /*
   Admin page protection
@@ -75,6 +83,7 @@ function createAdminRouter({
         ) {
           return res.status(401).json({
             success: false,
+
             error:
               "Invalid admin password",
           });
@@ -116,6 +125,7 @@ function createAdminRouter({
 
         return res.status(500).json({
           success: false,
+
           error:
             "Admin login failed",
         });
@@ -131,10 +141,11 @@ function createAdminRouter({
     "/admin/logout",
     async (req, res) => {
       try {
-        const token = getCookie(
-          req,
-          "admin_session"
-        );
+        const token =
+          getCookie(
+            req,
+            "admin_session"
+          );
 
         if (token) {
           await pool.query(
@@ -181,59 +192,69 @@ function createAdminRouter({
     requireAdmin,
     async (req, res) => {
       try {
-        const result = await pool.query(
-          `
-          SELECT
-            COUNT(*)::int AS total_orders,
+        const result =
+          await pool.query(
+            `
+            SELECT
+              COUNT(*)::int
+                AS total_orders,
 
-            COUNT(*) FILTER (
-              WHERE status = 'pending'
-            )::int AS pending_orders,
+              COUNT(*) FILTER (
+                WHERE status = 'pending'
+              )::int
+                AS pending_orders,
 
-            COUNT(*) FILTER (
-              WHERE status = 'confirmed'
-            )::int AS confirmed_orders,
+              COUNT(*) FILTER (
+                WHERE status = 'confirmed'
+              )::int
+                AS confirmed_orders,
 
-            COUNT(*) FILTER (
-              WHERE status = 'delivered'
-            )::int AS delivered_orders,
+              COUNT(*) FILTER (
+                WHERE status = 'delivered'
+              )::int
+                AS delivered_orders,
 
-            COUNT(*) FILTER (
-              WHERE status = 'cancelled'
-            )::int AS cancelled_orders,
+              COUNT(*) FILTER (
+                WHERE status = 'cancelled'
+              )::int
+                AS cancelled_orders,
 
-            COUNT(*) FILTER (
-              WHERE status = 'refunded'
-            )::int AS refunded_orders,
+              COUNT(*) FILTER (
+                WHERE status = 'refunded'
+              )::int
+                AS refunded_orders,
 
-            COALESCE(
-              SUM(
-                CASE
-                  WHEN status IN (
-                    'confirmed',
-                    'delivered'
-                  )
-                  THEN 1399
-                  ELSE 0
-                END
-              ),
-              0
-            )::int AS revenue_cents
+              COALESCE(
+                SUM(
+                  CASE
+                    WHEN status IN (
+                      'confirmed',
+                      'delivered'
+                    )
+                    THEN 1399
+                    ELSE 0
+                  END
+                ),
+                0
+              )::int
+                AS revenue_cents
 
-          FROM orders
+            FROM orders
 
-          WHERE created_at >=
-            date_trunc(
-              'day',
-              NOW() AT TIME ZONE
-              'America/New_York'
-            )
-          `
-        );
+            WHERE created_at >=
+              date_trunc(
+                'day',
+                NOW() AT TIME ZONE
+                'America/New_York'
+              )
+            `
+          );
 
         return res.json({
           success: true,
-          stats: result.rows[0],
+
+          stats:
+            result.rows[0],
         });
       } catch (error) {
         console.error(
@@ -243,6 +264,7 @@ function createAdminRouter({
 
         return res.status(500).json({
           success: false,
+
           error:
             "Could not load overview",
         });
@@ -259,30 +281,32 @@ function createAdminRouter({
     requireAdmin,
     async (req, res) => {
       try {
-        const result = await pool.query(
-          `
-          SELECT
-            orders.*,
-            drivers.name AS assigned_driver
+        const result =
+          await pool.query(
+            `
+            SELECT
+              orders.*,
+              drivers.name
+                AS assigned_driver
 
-          FROM orders
+            FROM orders
 
-          LEFT JOIN driver_assignments
-            ON driver_assignments.day =
-               orders.day
-           AND driver_assignments.stop =
-               orders.stop
+            LEFT JOIN driver_assignments
+              ON driver_assignments.day =
+                 orders.day
+             AND driver_assignments.stop =
+                 orders.stop
 
-          LEFT JOIN drivers
-            ON drivers.id =
-               driver_assignments.driver_id
+            LEFT JOIN drivers
+              ON drivers.id =
+                 driver_assignments.driver_id
 
-          ORDER BY
-            orders.created_at DESC
+            ORDER BY
+              orders.created_at DESC
 
-          LIMIT 500
-          `
-        );
+            LIMIT 500
+            `
+          );
 
         return res.json(
           result.rows
@@ -293,13 +317,15 @@ function createAdminRouter({
           error.message
         );
 
-        return res.status(500).json([]);
+        return res
+          .status(500)
+          .json([]);
       }
     }
   );
 
   /*
-  Manually confirm order
+  Manually confirm an order
   */
 
   router.post(
@@ -314,28 +340,32 @@ function createAdminRouter({
         if (!orderId) {
           return res.status(400).json({
             success: false,
+
             error:
               "Missing order ID",
           });
         }
 
-        const result = await pool.query(
-          `
-          UPDATE orders
-          SET
-            status = 'confirmed',
-            confirmed_at =
-              COALESCE(
-                confirmed_at,
-                NOW()
-              )
+        const result =
+          await pool.query(
+            `
+            UPDATE orders
 
-          WHERE order_id = $1
+            SET
+              status = 'confirmed',
 
-          RETURNING *
-          `,
-          [orderId]
-        );
+              confirmed_at =
+                COALESCE(
+                  confirmed_at,
+                  NOW()
+                )
+
+            WHERE order_id = $1
+
+            RETURNING *
+            `,
+            [orderId]
+          );
 
         const order =
           result.rows[0];
@@ -343,6 +373,7 @@ function createAdminRouter({
         if (!order) {
           return res.status(404).json({
             success: false,
+
             error:
               "Order not found",
           });
@@ -376,6 +407,7 @@ function createAdminRouter({
 
         return res.status(500).json({
           success: false,
+
           error:
             "Could not confirm order",
         });
@@ -384,7 +416,7 @@ function createAdminRouter({
   );
 
   /*
-  Cancel or refund order
+  Cancel or refund an order
   */
 
   router.post(
@@ -399,6 +431,7 @@ function createAdminRouter({
         if (!orderId) {
           return res.status(400).json({
             success: false,
+
             error:
               "Missing order ID",
           });
@@ -408,8 +441,11 @@ function createAdminRouter({
           await pool.query(
             `
             SELECT *
+
             FROM orders
+
             WHERE order_id = $1
+
             LIMIT 1
             `,
             [orderId]
@@ -421,6 +457,7 @@ function createAdminRouter({
         if (!order) {
           return res.status(404).json({
             success: false,
+
             error:
               "Order not found",
           });
@@ -435,14 +472,15 @@ function createAdminRouter({
         ) {
           return res.status(400).json({
             success: false,
+
             error:
               "Order is already closed",
           });
         }
 
         /*
-        Unpaid order:
-        cancel without Square refund.
+        Unpaid orders can be cancelled
+        without contacting Square.
         */
 
         if (
@@ -452,8 +490,11 @@ function createAdminRouter({
             await pool.query(
               `
               UPDATE orders
+
               SET status = 'cancelled'
+
               WHERE order_id = $1
+
               RETURNING *
               `,
               [orderId]
@@ -464,22 +505,27 @@ function createAdminRouter({
               order.phone,
 
               `Your AAHAAR25 order has been cancelled.\n\n` +
-                `Day: ${order.day}\n` +
-                `Stop: ${order.stop}`
+                `Day: ${
+                  order.day || ""
+                }\n` +
+                `Stop: ${
+                  order.stop || ""
+                }`
             );
           }
 
           return res.json({
             success: true,
             refunded: false,
+
             order:
               updated.rows[0],
           });
         }
 
         /*
-        Paid order:
-        retrieve payment and refund it.
+        Paid orders require a Square
+        refund request.
         */
 
         const payment =
@@ -492,6 +538,7 @@ function createAdminRouter({
         ) {
           return res.status(400).json({
             success: false,
+
             error:
               "Payment amount could not be found",
           });
@@ -521,8 +568,11 @@ function createAdminRouter({
           await pool.query(
             `
             UPDATE orders
+
             SET status = $1
+
             WHERE order_id = $2
+
             RETURNING *
             `,
             [
@@ -536,8 +586,12 @@ function createAdminRouter({
             order.phone,
 
             `Your AAHAAR25 order was cancelled and a refund was requested.\n\n` +
-              `Day: ${order.day}\n` +
-              `Stop: ${order.stop}`
+              `Day: ${
+                order.day || ""
+              }\n` +
+              `Stop: ${
+                order.stop || ""
+              }`
           );
         }
 
@@ -561,6 +615,7 @@ function createAdminRouter({
 
         return res.status(500).json({
           success: false,
+
           error:
             "Cancel/refund failed",
         });
@@ -569,7 +624,7 @@ function createAdminRouter({
   );
 
   /*
-  Load drivers
+  Load all drivers
   */
 
   router.get(
@@ -592,6 +647,7 @@ function createAdminRouter({
             FROM drivers
 
             ORDER BY
+              is_active DESC,
               created_at DESC
             `
           );
@@ -605,17 +661,21 @@ function createAdminRouter({
           error.message
         );
 
-        return res.status(500).json([]);
+        return res
+          .status(500)
+          .json([]);
       }
     }
   );
 
   /*
-  Add driver using current
-  name/password system.
+  Add a driver.
 
-  OTP onboarding will replace this
-  in the next feature stage.
+  Only the driver's name and WhatsApp
+  phone number are required.
+
+  Drivers authenticate using temporary
+  WhatsApp codes instead of passwords.
   */
 
   router.post(
@@ -629,31 +689,51 @@ function createAdminRouter({
           .trim()
           .slice(0, 80);
 
-        const phone = String(
-          req.body.phone || ""
-        )
-          .trim()
-          .slice(0, 30);
+        const submittedPhone =
+          String(
+            req.body.phone || ""
+          ).trim();
 
-        const password = String(
-          req.body.password || ""
-        );
+        const phone =
+          normalizePhone(
+            submittedPhone
+          );
+
+        if (!name) {
+          return res.status(400).json({
+            success: false,
+
+            error:
+              "Driver name is required.",
+          });
+        }
 
         if (
-          !name ||
-          !password ||
-          password.length < 4
+          phone.length < 10 ||
+          phone.length > 15
         ) {
           return res.status(400).json({
             success: false,
 
             error:
-              "Driver name and a password of at least four characters are required.",
+              "Enter a valid driver phone number.",
           });
         }
 
-        const passwordHash =
-          hashPassword(password);
+        const phoneAlreadyExists =
+          await driverPhoneExists(
+            pool,
+            phone
+          );
+
+        if (phoneAlreadyExists) {
+          return res.status(409).json({
+            success: false,
+
+            error:
+              "That phone number is already associated with another driver.",
+          });
+        }
 
         const result =
           await pool.query(
@@ -661,12 +741,14 @@ function createAdminRouter({
             INSERT INTO drivers (
               name,
               phone,
-              password_hash
+              password_hash,
+              is_active
             )
             VALUES (
               $1,
               $2,
-              $3
+              NULL,
+              TRUE
             )
 
             RETURNING
@@ -674,19 +756,24 @@ function createAdminRouter({
               name,
               phone,
               is_active,
-              created_at
+              created_at,
+              last_login,
+              phone_verified_at
             `,
             [
               name,
-              phone || null,
-              passwordHash,
+              phone,
             ]
           );
 
         return res.json({
           success: true,
+
           driver:
             result.rows[0],
+
+          message:
+            "Driver created. They can now request a login code using this phone number.",
         });
       } catch (error) {
         console.error(
@@ -699,21 +786,24 @@ function createAdminRouter({
 
         return res
           .status(
-            duplicate ? 409 : 500
+            duplicate
+              ? 409
+              : 500
           )
           .json({
             success: false,
 
-            error: duplicate
-              ? "A driver with that name already exists."
-              : "Could not add driver",
+            error:
+              duplicate
+                ? "A driver with that name already exists."
+                : "Could not add driver",
           });
       }
     }
   );
 
   /*
-  Reactivate driver
+  Reactivate a driver
   */
 
   router.post(
@@ -721,15 +811,19 @@ function createAdminRouter({
     requireAdmin,
     async (req, res) => {
       try {
-        const driverId = Number(
-          req.body.driverId
-        );
+        const driverId =
+          Number(
+            req.body.driverId
+          );
 
         if (
-          !Number.isInteger(driverId)
+          !Number.isInteger(
+            driverId
+          )
         ) {
           return res.status(400).json({
             success: false,
+
             error:
               "Invalid driver",
           });
@@ -739,14 +833,19 @@ function createAdminRouter({
           await pool.query(
             `
             UPDATE drivers
+
             SET is_active = TRUE
+
             WHERE id = $1
 
             RETURNING
               id,
               name,
               phone,
-              is_active
+              is_active,
+              created_at,
+              last_login,
+              phone_verified_at
             `,
             [driverId]
           );
@@ -754,6 +853,7 @@ function createAdminRouter({
         if (!result.rows[0]) {
           return res.status(404).json({
             success: false,
+
             error:
               "Driver not found",
           });
@@ -761,6 +861,7 @@ function createAdminRouter({
 
         return res.json({
           success: true,
+
           driver:
             result.rows[0],
         });
@@ -772,6 +873,7 @@ function createAdminRouter({
 
         return res.status(500).json({
           success: false,
+
           error:
             "Could not activate driver",
         });
@@ -780,7 +882,10 @@ function createAdminRouter({
   );
 
   /*
-  Deactivate driver
+  Deactivate a driver.
+
+  Deactivated drivers cannot request
+  login codes or access the driver panel.
   */
 
   router.post(
@@ -788,54 +893,132 @@ function createAdminRouter({
     requireAdmin,
     async (req, res) => {
       try {
-        const driverId = Number(
-          req.body.driverId
-        );
+        const driverId =
+          Number(
+            req.body.driverId
+          );
 
         if (
-          !Number.isInteger(driverId)
+          !Number.isInteger(
+            driverId
+          )
         ) {
           return res.status(400).json({
             success: false,
+
             error:
               "Invalid driver",
           });
         }
 
-        const result =
-          await pool.query(
-            `
-            UPDATE drivers
-            SET is_active = FALSE
-            WHERE id = $1
+        const client =
+          await pool.connect();
 
-            RETURNING
-              id,
-              name,
-              phone,
-              is_active
+        try {
+          await client.query(
+            "BEGIN"
+          );
+
+          const result =
+            await client.query(
+              `
+              UPDATE drivers
+
+              SET is_active = FALSE
+
+              WHERE id = $1
+
+              RETURNING
+                id,
+                name,
+                phone,
+                is_active,
+                created_at,
+                last_login,
+                phone_verified_at
+              `,
+              [driverId]
+            );
+
+          if (!result.rows[0]) {
+            await client.query(
+              "ROLLBACK"
+            );
+
+            return res.status(404).json({
+              success: false,
+
+              error:
+                "Driver not found",
+            });
+          }
+
+          /*
+          Remove current sessions and
+          temporary login codes.
+          */
+
+          await deleteAllDriverSessions(
+            client,
+            driverId
+          );
+
+          await deleteAllDriverLoginCodes(
+            client,
+            driverId
+          );
+
+          /*
+          Unassign the driver from all
+          future route assignments.
+          */
+
+          await client.query(
+            `
+            UPDATE driver_assignments
+
+            SET
+              driver_id = NULL,
+              updated_at = NOW()
+
+            WHERE driver_id = $1
             `,
             [driverId]
           );
 
-        if (!result.rows[0]) {
-          return res.status(404).json({
-            success: false,
-            error:
-              "Driver not found",
+          await client.query(
+            `
+            UPDATE route_progress
+
+            SET
+              driver_id = NULL,
+              status = 'not_started',
+              updated_at = NOW()
+
+            WHERE driver_id = $1
+            `,
+            [driverId]
+          );
+
+          await client.query(
+            "COMMIT"
+          );
+
+          return res.json({
+            success: true,
+
+            driver:
+              result.rows[0],
           });
+        } catch (error) {
+          await client.query(
+            "ROLLBACK"
+          );
+
+          throw error;
+        } finally {
+          client.release();
         }
-
-        await deleteAllDriverSessions(
-          pool,
-          driverId
-        );
-
-        return res.json({
-          success: true,
-          driver:
-            result.rows[0],
-        });
       } catch (error) {
         console.error(
           "Deactivate driver error:",
@@ -844,9 +1027,211 @@ function createAdminRouter({
 
         return res.status(500).json({
           success: false,
+
           error:
             "Could not deactivate driver",
         });
+      }
+    }
+  );
+
+  /*
+  Permanently delete a deactivated
+  driver.
+
+  Active drivers must be deactivated
+  first to prevent accidental deletion.
+  */
+
+  router.post(
+    "/admin/drivers/delete",
+    requireAdmin,
+    async (req, res) => {
+      const client =
+        await pool.connect();
+
+      try {
+        const driverId =
+          Number(
+            req.body.driverId
+          );
+
+        if (
+          !Number.isInteger(
+            driverId
+          )
+        ) {
+          return res.status(400).json({
+            success: false,
+
+            error:
+              "Invalid driver",
+          });
+        }
+
+        await client.query(
+          "BEGIN"
+        );
+
+        const driverResult =
+          await client.query(
+            `
+            SELECT
+              id,
+              name,
+              phone,
+              is_active
+
+            FROM drivers
+
+            WHERE id = $1
+
+            LIMIT 1
+
+            FOR UPDATE
+            `,
+            [driverId]
+          );
+
+        const driver =
+          driverResult.rows[0];
+
+        if (!driver) {
+          await client.query(
+            "ROLLBACK"
+          );
+
+          return res.status(404).json({
+            success: false,
+
+            error:
+              "Driver not found",
+          });
+        }
+
+        if (driver.is_active) {
+          await client.query(
+            "ROLLBACK"
+          );
+
+          return res.status(400).json({
+            success: false,
+
+            error:
+              "Deactivate the driver before deleting them permanently.",
+          });
+        }
+
+        /*
+        These tables use foreign keys,
+        but clearing route assignments
+        explicitly keeps the result clear.
+        */
+
+        await client.query(
+          `
+          UPDATE driver_assignments
+
+          SET
+            driver_id = NULL,
+            updated_at = NOW()
+
+          WHERE driver_id = $1
+          `,
+          [driverId]
+        );
+
+        await client.query(
+          `
+          UPDATE route_progress
+
+          SET
+            driver_id = NULL,
+            status = 'not_started',
+            updated_at = NOW()
+
+          WHERE driver_id = $1
+          `,
+          [driverId]
+        );
+
+        /*
+        Keep historical driver activity,
+        but detach it from the deleted
+        account. The driver_name text
+        remains for the activity record.
+        */
+
+        await client.query(
+          `
+          UPDATE driver_activity
+
+          SET driver_id = NULL
+
+          WHERE driver_id = $1
+          `,
+          [driverId]
+        );
+
+        await deleteAllDriverSessions(
+          client,
+          driverId
+        );
+
+        await deleteAllDriverLoginCodes(
+          client,
+          driverId
+        );
+
+        await client.query(
+          `
+          DELETE FROM drivers
+
+          WHERE id = $1
+          `,
+          [driverId]
+        );
+
+        await client.query(
+          "COMMIT"
+        );
+
+        return res.json({
+          success: true,
+
+          deletedDriver: {
+            id:
+              driver.id,
+
+            name:
+              driver.name,
+
+            phone:
+              driver.phone,
+          },
+        });
+      } catch (error) {
+        try {
+          await client.query(
+            "ROLLBACK"
+          );
+        } catch {
+          // Ignore rollback errors.
+        }
+
+        console.error(
+          "Delete driver error:",
+          error.message
+        );
+
+        return res.status(500).json({
+          success: false,
+
+          error:
+            "Could not permanently delete the driver",
+        });
+      } finally {
+        client.release();
       }
     }
   );
@@ -864,8 +1249,12 @@ function createAdminRouter({
           await pool.query(
             `
             SELECT *
+
             FROM driver_activity
-            ORDER BY created_at DESC
+
+            ORDER BY
+              created_at DESC
+
             LIMIT 200
             `
           );
@@ -879,7 +1268,9 @@ function createAdminRouter({
           error.message
         );
 
-        return res.status(500).json([]);
+        return res
+          .status(500)
+          .json([]);
       }
     }
   );
@@ -901,7 +1292,9 @@ function createAdminRouter({
               driver_assignments.day,
               driver_assignments.stop,
               driver_assignments.driver_id,
-              drivers.name AS driver_name,
+
+              drivers.name
+                AS driver_name,
 
               COALESCE(
                 route_progress.status,
@@ -924,10 +1317,14 @@ function createAdminRouter({
 
               CASE
                 driver_assignments.day
-                WHEN 'Tuesday' THEN 1
-                WHEN 'Wednesday' THEN 2
-                WHEN 'Thursday' THEN 3
-                WHEN 'Friday' THEN 4
+                WHEN 'Tuesday'
+                  THEN 1
+                WHEN 'Wednesday'
+                  THEN 2
+                WHEN 'Thursday'
+                  THEN 3
+                WHEN 'Friday'
+                  THEN 4
                 ELSE 5
               END,
 
@@ -955,13 +1352,16 @@ function createAdminRouter({
           error.message
         );
 
-        return res.status(500).json([]);
+        return res
+          .status(500)
+          .json([]);
       }
     }
   );
 
   /*
-  Create or update assignment
+  Create, update, or clear one
+  driver assignment
   */
 
   router.post(
@@ -1006,6 +1406,7 @@ function createAdminRouter({
         ) {
           return res.status(400).json({
             success: false,
+
             error:
               "Invalid day or stop",
           });
@@ -1013,10 +1414,13 @@ function createAdminRouter({
 
         if (
           driverId !== null &&
-          !Number.isInteger(driverId)
+          !Number.isInteger(
+            driverId
+          )
         ) {
           return res.status(400).json({
             success: false,
+
             error:
               "Invalid driver",
           });
@@ -1027,9 +1431,13 @@ function createAdminRouter({
             await pool.query(
               `
               SELECT id
+
               FROM drivers
-              WHERE id = $1
+
+              WHERE
+                id = $1
                 AND is_active = TRUE
+
               LIMIT 1
               `,
               [driverId]
@@ -1038,6 +1446,7 @@ function createAdminRouter({
           if (!driverResult.rows[0]) {
             return res.status(400).json({
               success: false,
+
               error:
                 "Active driver not found",
             });
@@ -1066,6 +1475,7 @@ function createAdminRouter({
             DO UPDATE SET
               driver_id =
                 EXCLUDED.driver_id,
+
               updated_at = NOW()
 
             RETURNING *
@@ -1125,6 +1535,7 @@ function createAdminRouter({
 
         return res.json({
           success: true,
+
           assignment:
             assignmentResult.rows[0],
         });
@@ -1136,6 +1547,7 @@ function createAdminRouter({
 
         return res.status(500).json({
           success: false,
+
           error:
             "Could not save assignment",
         });

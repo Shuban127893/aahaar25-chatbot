@@ -2,9 +2,15 @@ const express = require("express");
 const rateLimit = require("express-rate-limit");
 
 const {
-  authenticateDriver,
+  normalizePhone,
+  generateSixDigitCode,
+  hashOneTimeCode,
+  verifyOneTimeCodeHash,
+  findActiveDriverByPhone,
   createDriverSession,
   deleteDriverSession,
+  deleteAllDriverSessions,
+  deleteAllDriverLoginCodes,
 } = require("../services/driverAuthService");
 
 function createDriverRouter({
@@ -17,12 +23,15 @@ function createDriverRouter({
 }) {
   const router = express.Router();
 
-  const driverLoginLimiter =
+  const OTP_SECRET =
+    process.env.OTP_SECRET;
+
+  const driverCodeRequestLimiter =
     rateLimit({
       windowMs:
         15 * 60 * 1000,
 
-      max: 10,
+      max: 5,
 
       standardHeaders: true,
       legacyHeaders: false,
@@ -31,7 +40,25 @@ function createDriverRouter({
         success: false,
 
         error:
-          "Too many login attempts. Try again later.",
+          "Too many login code requests. Please wait 15 minutes and try again.",
+      },
+    });
+
+  const driverCodeVerificationLimiter =
+    rateLimit({
+      windowMs:
+        15 * 60 * 1000,
+
+      max: 15,
+
+      standardHeaders: true,
+      legacyHeaders: false,
+
+      message: {
+        success: false,
+
+        error:
+          "Too many verification attempts. Please wait 15 minutes and try again.",
       },
     });
 
@@ -124,6 +151,7 @@ function createDriverRouter({
         "en-US",
         {
           weekday: "long",
+
           timeZone:
             "America/New_York",
         }
@@ -143,36 +171,418 @@ function createDriverRouter({
     return "Tuesday";
   }
 
+  function validPhoneNumber(
+    phone
+  ) {
+    const normalized =
+      normalizePhone(phone);
+
+    return (
+      normalized.length >= 10 &&
+      normalized.length <= 15
+    );
+  }
+
   /*
-  Driver login
+  Request a temporary WhatsApp
+  login code.
+
+  The driver enters the same phone
+  number saved by the administrator.
   */
 
   router.post(
-    "/driver/login",
-    driverLoginLimiter,
+    "/driver/request-code",
+    driverCodeRequestLimiter,
     async (req, res) => {
       try {
+        if (!OTP_SECRET) {
+          console.error(
+            "Driver OTP error: OTP_SECRET is missing"
+          );
+
+          return res.status(500).json({
+            success: false,
+
+            error:
+              "Driver login is not configured yet.",
+          });
+        }
+
+        const phone = String(
+          req.body.phone || ""
+        ).trim();
+
+        if (!validPhoneNumber(phone)) {
+          return res.status(400).json({
+            success: false,
+
+            error:
+              "Enter a valid phone number.",
+          });
+        }
+
         const driver =
-          await authenticateDriver(
+          await findActiveDriverByPhone(
             pool,
-            req.body.name,
-            req.body.password
+            phone
+          );
+
+        if (!driver) {
+          return res.status(404).json({
+            success: false,
+
+            error:
+              "No active driver account was found for that phone number.",
+          });
+        }
+
+        /*
+        Remove older unused codes so only
+        the newest code can be entered.
+        */
+
+        await deleteAllDriverLoginCodes(
+          pool,
+          driver.id
+        );
+
+        const code =
+          generateSixDigitCode();
+
+        const codeHash =
+          hashOneTimeCode(
+            code,
+            OTP_SECRET
+          );
+
+        await pool.query(
+          `
+          INSERT INTO driver_login_codes (
+            driver_id,
+            code_hash,
+            expires_at,
+            attempts
+          )
+          VALUES (
+            $1,
+            $2,
+            NOW() + INTERVAL '10 minutes',
+            0
+          )
+          `,
+          [
+            driver.id,
+            codeHash,
+          ]
+        );
+
+        const message =
+          `Your AAHAAR25 driver login code is: ${code}\n\n` +
+          `This code expires in 10 minutes. Do not share it with anyone.`;
+
+        const sendResult =
+          await sendWhatsAppMessage(
+            driver.phone,
+            message
+          );
+
+        if (!sendResult?.ok) {
+          await deleteAllDriverLoginCodes(
+            pool,
+            driver.id
+          );
+
+          console.error(
+            "Driver OTP WhatsApp error:",
+            sendResult?.error ||
+            "Unknown WhatsApp error"
+          );
+
+          return res.status(500).json({
+            success: false,
+
+            error:
+              "The login code could not be sent through WhatsApp.",
+          });
+        }
+
+        return res.json({
+          success: true,
+
+          message:
+            "A temporary login code was sent through WhatsApp.",
+
+          expiresInMinutes: 10,
+        });
+      } catch (error) {
+        console.error(
+          "Request driver code error:",
+          error.message
+        );
+
+        return res.status(500).json({
+          success: false,
+
+          error:
+            "Could not send the driver login code.",
+        });
+      }
+    }
+  );
+
+  /*
+  Verify the temporary code and create
+  an authenticated driver session.
+  */
+
+  router.post(
+    "/driver/verify-code",
+    driverCodeVerificationLimiter,
+    async (req, res) => {
+      const client =
+        await pool.connect();
+
+      try {
+        if (!OTP_SECRET) {
+          console.error(
+            "Driver OTP error: OTP_SECRET is missing"
+          );
+
+          return res.status(500).json({
+            success: false,
+
+            error:
+              "Driver login is not configured yet.",
+          });
+        }
+
+        const phone = String(
+          req.body.phone || ""
+        ).trim();
+
+        const code = String(
+          req.body.code || ""
+        )
+          .replace(/\D/g, "")
+          .slice(0, 6);
+
+        if (!validPhoneNumber(phone)) {
+          return res.status(400).json({
+            success: false,
+
+            error:
+              "Enter a valid phone number.",
+          });
+        }
+
+        if (
+          code.length !== 6
+        ) {
+          return res.status(400).json({
+            success: false,
+
+            error:
+              "Enter the six-digit login code.",
+          });
+        }
+
+        const driver =
+          await findActiveDriverByPhone(
+            client,
+            phone
           );
 
         if (!driver) {
           return res.status(401).json({
             success: false,
+
             error:
-              "Invalid login",
+              "The phone number or login code is incorrect.",
           });
         }
 
+        await client.query("BEGIN");
+
+        const codeResult =
+          await client.query(
+            `
+            SELECT
+              id,
+              driver_id,
+              code_hash,
+              expires_at,
+              used_at,
+              attempts
+
+            FROM driver_login_codes
+
+            WHERE
+              driver_id = $1
+              AND used_at IS NULL
+
+            ORDER BY
+              created_at DESC
+
+            LIMIT 1
+
+            FOR UPDATE
+            `,
+            [driver.id]
+          );
+
+        const loginCode =
+          codeResult.rows[0];
+
+        if (!loginCode) {
+          await client.query(
+            "ROLLBACK"
+          );
+
+          return res.status(401).json({
+            success: false,
+
+            error:
+              "No active login code was found. Request a new code.",
+          });
+        }
+
+        if (
+          new Date(
+            loginCode.expires_at
+          ).getTime() <= Date.now()
+        ) {
+          await client.query(
+            `
+            DELETE FROM driver_login_codes
+            WHERE id = $1
+            `,
+            [loginCode.id]
+          );
+
+          await client.query(
+            "COMMIT"
+          );
+
+          return res.status(401).json({
+            success: false,
+
+            error:
+              "That login code has expired. Request a new code.",
+          });
+        }
+
+        if (
+          Number(
+            loginCode.attempts || 0
+          ) >= 5
+        ) {
+          await client.query(
+            `
+            DELETE FROM driver_login_codes
+            WHERE id = $1
+            `,
+            [loginCode.id]
+          );
+
+          await client.query(
+            "COMMIT"
+          );
+
+          return res.status(401).json({
+            success: false,
+
+            error:
+              "Too many incorrect attempts. Request a new code.",
+          });
+        }
+
+        const codeIsValid =
+          verifyOneTimeCodeHash(
+            code,
+            loginCode.code_hash,
+            OTP_SECRET
+          );
+
+        if (!codeIsValid) {
+          await client.query(
+            `
+            UPDATE driver_login_codes
+
+            SET attempts =
+              attempts + 1
+
+            WHERE id = $1
+            `,
+            [loginCode.id]
+          );
+
+          await client.query(
+            "COMMIT"
+          );
+
+          const attemptsRemaining =
+            Math.max(
+              0,
+              4 -
+              Number(
+                loginCode.attempts || 0
+              )
+            );
+
+          return res.status(401).json({
+            success: false,
+
+            error:
+              attemptsRemaining > 0
+                ? `Incorrect code. ${attemptsRemaining} attempt${
+                    attemptsRemaining === 1
+                      ? ""
+                      : "s"
+                  } remaining.`
+                : "Incorrect code. Request a new code.",
+          });
+        }
+
+        /*
+        Mark the code as used before
+        creating the session.
+        */
+
+        await client.query(
+          `
+          UPDATE driver_login_codes
+
+          SET used_at = NOW()
+
+          WHERE id = $1
+          `,
+          [loginCode.id]
+        );
+
+        /*
+        Remove older driver sessions.
+
+        This prevents one driver's account
+        from remaining signed in on several
+        devices at the same time.
+        */
+
+        await deleteAllDriverSessions(
+          client,
+          driver.id
+        );
+
         const token =
           await createDriverSession(
-            pool,
+            client,
             driver.id,
             8
           );
+
+        await client.query(
+          "COMMIT"
+        );
 
         setCookie(
           res,
@@ -191,22 +601,33 @@ function createDriverRouter({
           },
         });
       } catch (error) {
+        try {
+          await client.query(
+            "ROLLBACK"
+          );
+        } catch {
+          // Ignore rollback errors.
+        }
+
         console.error(
-          "Driver login error:",
+          "Verify driver code error:",
           error.message
         );
 
         return res.status(500).json({
           success: false,
+
           error:
-            "Driver login failed",
+            "The login code could not be verified.",
         });
+      } finally {
+        client.release();
       }
     }
   );
 
   /*
-  Driver logout
+  Driver logout.
   */
 
   router.post(
@@ -250,7 +671,8 @@ function createDriverRouter({
   );
 
   /*
-  Driver account and assignments
+  Load the authenticated driver's
+  assignments for a requested day.
   */
 
   router.get(
@@ -261,8 +683,9 @@ function createDriverRouter({
         if (!req.driver) {
           return res.status(401).json({
             success: false,
+
             error:
-              "Driver account required",
+              "Driver login required.",
           });
         }
 
@@ -377,15 +800,18 @@ function createDriverRouter({
 
         return res.status(500).json({
           success: false,
+
           error:
-            "Could not load driver route",
+            "Could not load the driver route.",
         });
       }
     }
   );
 
   /*
-  Send stop notification
+  Send delivery notifications to
+  confirmed customers at an assigned
+  stop.
   */
 
   router.post(
@@ -415,11 +841,21 @@ function createDriverRouter({
           "delivered",
         ];
 
+        if (!req.driver) {
+          return res.status(401).json({
+            success: false,
+
+            error:
+              "Driver login required.",
+          });
+        }
+
         if (!stop) {
           return res.status(400).json({
             success: false,
+
             error:
-              "Invalid stop",
+              "Invalid delivery stop.",
           });
         }
 
@@ -430,54 +866,50 @@ function createDriverRouter({
         ) {
           return res.status(400).json({
             success: false,
+
             error:
-              "Invalid status",
+              "Invalid delivery status.",
           });
         }
 
-        /*
-        When using the driver's
-        browser session, verify the
-        stop belongs to that driver.
-        */
+        const assignment =
+          await pool.query(
+            `
+            SELECT id
 
-        if (req.driver) {
-          const assignment =
-            await pool.query(
-              `
-              SELECT id
-              FROM driver_assignments
+            FROM driver_assignments
 
-              WHERE day = $1
-                AND stop = $2
-                AND driver_id = $3
+            WHERE
+              day = $1
+              AND stop = $2
+              AND driver_id = $3
 
-              LIMIT 1
-              `,
-              [
-                day,
-                stop,
-                req.driver.id,
-              ]
-            );
+            LIMIT 1
+            `,
+            [
+              day,
+              stop,
+              req.driver.id,
+            ]
+          );
 
-          if (
-            assignment.rows.length ===
-            0
-          ) {
-            return res.status(403).json({
-              success: false,
+        if (
+          assignment.rows.length ===
+          0
+        ) {
+          return res.status(403).json({
+            success: false,
 
-              error:
-                "This stop is not assigned to your account",
-            });
-          }
+            error:
+              "This stop is not assigned to your account.",
+          });
         }
 
         const orderResult =
           await pool.query(
             `
             SELECT *
+
             FROM orders
 
             WHERE
@@ -523,7 +955,7 @@ function createDriverRouter({
               messages[status]
             );
 
-          if (result.ok) {
+          if (result?.ok) {
             sentCount += 1;
           }
         }
@@ -583,40 +1015,38 @@ function createDriverRouter({
           [
             day,
             stop,
-            req.driver?.id || null,
+            req.driver.id,
             status,
           ]
         );
 
-        if (req.driver) {
-          await pool.query(
-            `
-            INSERT INTO driver_activity (
-              driver_id,
-              driver_name,
-              action,
-              stop,
-              status,
-              sent_count
-            )
-            VALUES (
-              $1,
-              $2,
-              'notify_stop',
-              $3,
-              $4,
-              $5
-            )
-            `,
-            [
-              req.driver.id,
-              req.driver.name,
-              stop,
-              status,
-              sentCount,
-            ]
-          );
-        }
+        await pool.query(
+          `
+          INSERT INTO driver_activity (
+            driver_id,
+            driver_name,
+            action,
+            stop,
+            status,
+            sent_count
+          )
+          VALUES (
+            $1,
+            $2,
+            'notify_stop',
+            $3,
+            $4,
+            $5
+          )
+          `,
+          [
+            req.driver.id,
+            req.driver.name,
+            stop,
+            status,
+            sentCount,
+          ]
+        );
 
         return res.json({
           success: true,
@@ -636,8 +1066,9 @@ function createDriverRouter({
 
         return res.status(500).json({
           success: false,
+
           error:
-            "Driver notification failed",
+            "Driver notification failed.",
         });
       }
     }
