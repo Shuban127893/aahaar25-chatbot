@@ -5,20 +5,41 @@
 
   <meta
     name="viewport"
-    content="width=device-width, initial-scale=1"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
   >
+
+  <meta name="theme-color" content="#4b2d1b">
 
   <title>AAHAAR25 Driver</title>
 
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css"
+  >
+
   <style>
     :root {
-      --orange: #f97316;
-      --green: #15803d;
-      --red: #dc2626;
-      --cream: #fff7ed;
-      --brown: #4a2c1b;
-      --gray: #6b7280;
-      --border: #ead7c3;
+      --orange: #ec6d13;
+      --orange-dark: #c95308;
+      --orange-light: #fff0d9;
+
+      --green: #176b45;
+      --green-light: #dcf5e7;
+
+      --cream: #fff7e9;
+      --cream-dark: #f5e7d1;
+
+      --brown: #4b2d1b;
+      --brown-dark: #321b0f;
+
+      --muted: #76675d;
+      --red: #c7443d;
+
+      --line: #eadcca;
+      --card: #ffffff;
+
+      --shadow:
+        0 16px 38px rgba(78, 45, 21, 0.13);
     }
 
     * {
@@ -26,15 +47,27 @@
     }
 
     body {
+      min-height: 100vh;
       margin: 0;
-      font-family: Arial, sans-serif;
-      background:
-        linear-gradient(
-          145deg,
-          #fffaf4,
-          #ffedd5
-        );
       color: var(--brown);
+      background:
+        radial-gradient(
+          circle at top left,
+          rgba(236, 109, 19, 0.12),
+          transparent 30%
+        ),
+        linear-gradient(
+          150deg,
+          #fffaf2,
+          #ffefd7
+        );
+      font-family:
+        Inter,
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
     }
 
     button,
@@ -42,322 +75,683 @@
       font: inherit;
     }
 
+    button {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
     .hidden {
       display: none !important;
     }
 
-    .page {
-      max-width: 680px;
-      margin: 0 auto;
-      padding: 18px;
+    .shell {
+      width: 100%;
+      max-width: 760px;
       min-height: 100vh;
+      margin: auto;
+      padding: 20px;
     }
 
     .brand {
       display: flex;
       align-items: center;
       gap: 12px;
-      margin-bottom: 20px;
+      margin-bottom: 22px;
     }
 
     .logo {
-      width: 54px;
-      height: 54px;
-      border-radius: 18px;
+      display: grid;
+      width: 52px;
+      height: 52px;
+      flex: 0 0 52px;
+      place-items: center;
+      border-radius: 17px;
+      color: #ffffff;
       background:
         linear-gradient(
           135deg,
           var(--orange),
-          #f59e0b
+          #f8a33e
         );
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 29px;
       box-shadow:
-        0 9px 20px
-        rgba(249, 115, 22, 0.25);
+        0 9px 22px rgba(236, 109, 19, 0.25);
+      font-size: 24px;
     }
 
     .brand h2 {
-      margin: 0;
+      margin-bottom: 3px;
+      color: var(--brown-dark);
+      font-size: 20px;
     }
 
-    .subtitle {
-      color: var(--gray);
+    .sub {
+      color: var(--muted);
     }
 
-    .card,
-    .stop-card {
-      background: white;
-      border: 1px solid var(--border);
-      border-radius: 22px;
-      padding: 21px;
+    .card {
       margin-bottom: 16px;
-      box-shadow:
-        0 10px 28px
-        rgba(0, 0, 0, 0.1);
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: var(--card);
+      box-shadow: var(--shadow);
     }
 
-    input {
+    .field {
       width: 100%;
+      margin: 7px 0 13px;
       padding: 15px;
-      margin: 7px 0;
-      border: 1px solid var(--border);
-      border-radius: 13px;
-      font-size: 17px;
-    }
-
-    button {
-      border: none;
+      border: 1px solid var(--line);
+      outline: none;
       border-radius: 14px;
-      padding: 15px;
-      font-weight: bold;
+      color: var(--brown);
+      background: #ffffff;
       font-size: 17px;
-      background: var(--orange);
-      color: white;
-      cursor: pointer;
     }
 
-    .full {
+    .field:focus {
+      border-color: var(--orange);
+      box-shadow:
+        0 0 0 4px rgba(236, 109, 19, 0.12);
+    }
+
+    .btn {
+      display: inline-flex;
       width: 100%;
+      min-height: 51px;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
       margin-top: 9px;
+      padding: 14px 15px;
+      border: 0;
+      border-radius: 15px;
+      color: #ffffff;
+      background:
+        linear-gradient(
+          135deg,
+          var(--orange),
+          #ff7815
+        );
+      box-shadow:
+        0 8px 18px rgba(236, 109, 19, 0.20);
+      font-size: 16px;
+      font-weight: 800;
+      cursor: pointer;
+      transition:
+        transform 160ms ease,
+        box-shadow 160ms ease,
+        opacity 160ms ease;
     }
 
-    .green {
-      background: var(--green);
+    .btn:hover {
+      transform: translateY(-1px);
+      box-shadow:
+        0 11px 22px rgba(236, 109, 19, 0.24);
     }
 
-    .red {
-      background: var(--red);
+    .btn:active {
+      transform: translateY(0);
     }
 
-    .gray {
-      background: #64748b;
+    .btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
     }
 
-    .used {
-      background: #dcfce7;
+    .btn.green {
+      background:
+        linear-gradient(
+          135deg,
+          var(--green),
+          #1b8b55
+        );
+      box-shadow:
+        0 8px 18px rgba(23, 107, 69, 0.18);
+    }
+
+    .btn.red {
+      background:
+        linear-gradient(
+          135deg,
+          var(--red),
+          #e22c2c
+        );
+      box-shadow:
+        0 8px 18px rgba(199, 68, 61, 0.18);
+    }
+
+    .btn.ghost {
+      color: var(--brown);
+      background: #ffffff;
+      border: 1px solid var(--line);
+      box-shadow: none;
+    }
+
+    .btn.used {
       color: var(--green);
-      border: 1px solid #86efac;
+      background: var(--green-light);
+      border: 1px solid #8cdbad;
+      box-shadow: none;
     }
 
-    .error {
-      color: var(--red);
-      font-weight: bold;
-    }
-
-    .success {
-      color: var(--green);
-      font-weight: bold;
-    }
-
-    .driver-header {
+    .hero {
       display: flex;
-      justify-content: space-between;
       align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .hero h1 {
+      margin: 12px 0 7px;
+      color: var(--brown-dark);
+      font-size: clamp(27px, 6vw, 34px);
+      letter-spacing: -0.03em;
+    }
+
+    .logout-button {
+      width: auto;
+      min-height: 46px;
+      margin: 0;
+      padding: 11px 15px;
+      white-space: nowrap;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      color: #a95000;
+      background: var(--orange-light);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+    }
+
+    .day-card {
+      padding: 18px;
+    }
+
+    .day-card-header {
+      margin-bottom: 13px;
+    }
+
+    .day-card-header h2 {
+      margin-bottom: 4px;
+      color: var(--brown-dark);
+      font-size: 17px;
+    }
+
+    .day-card-header p {
+      margin-bottom: 0;
+      font-size: 13px;
+    }
+
+    .day-tabs {
+      display: grid;
+      grid-template-columns:
+        repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .day-tab {
+      min-height: 45px;
+      padding: 10px 7px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      color: var(--brown);
+      background: #ffffff;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+      transition:
+        color 160ms ease,
+        background 160ms ease,
+        border-color 160ms ease,
+        transform 160ms ease;
+    }
+
+    .day-tab:hover {
+      transform: translateY(-1px);
+      border-color: #e1b881;
+      background: #fff9ef;
+    }
+
+    .day-tab.active {
+      color: #ffffff;
+      border-color: var(--orange);
+      background:
+        linear-gradient(
+          135deg,
+          var(--orange),
+          #ff811d
+        );
+      box-shadow:
+        0 7px 15px rgba(236, 109, 19, 0.20);
+    }
+
+    .day-tab.has-route::after {
+      display: block;
+      width: 5px;
+      height: 5px;
+      margin: 5px auto 0;
+      border-radius: 50%;
+      background: currentColor;
+      content: "";
+      opacity: 0.75;
+    }
+
+    .route-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       gap: 12px;
     }
 
-    .route-badge {
-      display: inline-block;
-      padding: 6px 10px;
-      border-radius: 999px;
-      background: #ffedd5;
-      color: #9a3412;
-      font-size: 12px;
-      font-weight: bold;
+    .route-head strong {
+      color: var(--brown-dark);
     }
 
-    .progress-track {
+    .progress {
       height: 10px;
-      border-radius: 999px;
-      background: #e5e7eb;
+      margin-top: 11px;
       overflow: hidden;
+      border-radius: 999px;
+      background: #efe6dc;
     }
 
-    .progress-fill {
+    .progress > div {
       height: 100%;
       width: 0;
+      border-radius: inherit;
       background:
         linear-gradient(
           90deg,
           var(--orange),
           var(--green)
         );
-      transition: width 0.25s;
+      transition: width 250ms ease;
+    }
+
+    .route-loading {
+      display: grid;
+      min-height: 190px;
+      place-items: center;
+      margin-bottom: 16px;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: #ffffff;
+      box-shadow: var(--shadow);
+    }
+
+    .spinner {
+      width: 30px;
+      height: 30px;
+      border: 3px solid var(--cream-dark);
+      border-top-color: var(--orange);
+      border-radius: 50%;
+      animation: spin 700ms linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .stop-card {
+      margin-bottom: 16px;
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background: #ffffff;
+      box-shadow: var(--shadow);
     }
 
     .stop-top {
       display: flex;
-      justify-content: space-between;
-      gap: 12px;
       align-items: flex-start;
-    }
-
-    .count-badge {
-      background: #dcfce7;
-      color: #166534;
-      border-radius: 999px;
-      padding: 7px 10px;
-      font-size: 12px;
-      font-weight: bold;
-    }
-
-    .button-grid {
-      display: grid;
-      grid-template-columns:
-        1fr 1fr;
+      justify-content: space-between;
       gap: 10px;
-      margin-top: 15px;
     }
 
-    .message {
+    .stop-top h2 {
+      margin-bottom: 7px;
+      color: var(--brown-dark);
+      font-size: 22px;
+    }
+
+    .stop-top p {
+      margin-bottom: 0;
+    }
+
+    .count {
+      padding: 7px 10px;
+      border-radius: 999px;
+      color: var(--green);
+      background: #edf7f1;
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .steps {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .status-msg {
       margin-top: 12px;
-      background: #fff7ed;
-      padding: 11px;
-      border-radius: 11px;
-      font-weight: bold;
+      padding: 12px;
+      border-radius: 12px;
+      color: var(--brown-dark);
+      background: #f6f0e9;
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.5;
     }
 
-    .empty {
+    .status-msg.sending {
+      color: #9a5700;
+      background: #fff1d5;
+    }
+
+    .status-msg.success {
+      color: var(--green);
+      background: var(--green-light);
+    }
+
+    .status-msg.failure {
+      color: var(--red);
+      background: #fdebea;
+    }
+
+    .empty-route {
+      padding: 35px 22px;
       text-align: center;
-      color: var(--gray);
     }
 
-    @media (max-width: 500px) {
-      .button-grid {
-        grid-template-columns: 1fr;
+    .empty-route-icon {
+      display: grid;
+      width: 60px;
+      height: 60px;
+      margin: 0 auto 17px;
+      place-items: center;
+      border-radius: 19px;
+      color: var(--orange);
+      background: var(--orange-light);
+      font-size: 24px;
+    }
+
+    .empty-route h2 {
+      margin-bottom: 8px;
+      color: var(--brown-dark);
+    }
+
+    .empty-route p {
+      max-width: 450px;
+      margin: 0 auto;
+      line-height: 1.6;
+    }
+
+    .error {
+      color: var(--red);
+      font-weight: 700;
+    }
+
+    @media (max-width: 560px) {
+      .shell {
+        padding: 14px;
       }
 
-      .driver-header {
+      .card,
+      .stop-card {
+        padding: 18px;
+        border-radius: 21px;
+      }
+
+      .hero {
         display: block;
       }
 
-      .driver-header button {
+      .logout-button {
         width: 100%;
-        margin-top: 10px;
+        margin-top: 15px;
+      }
+
+      .day-tabs {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .steps {
+        grid-template-columns: 1fr;
+      }
+
+      .stop-top {
+        align-items: flex-start;
       }
     }
   </style>
 </head>
 
 <body>
-  <div class="page">
+  <main class="shell">
     <div class="brand">
-      <div class="logo">🍱</div>
+      <div class="logo">
+        <i class="fa-solid fa-bowl-food"></i>
+      </div>
 
       <div>
         <h2>AAHAAR25 Driver</h2>
-
-        <div class="subtitle">
-          Delivery notification panel
+        <div class="sub">
+          Fast, secure route updates
         </div>
       </div>
     </div>
 
-    <section
-      id="loginCard"
-      class="card"
-    >
-      <h1>Driver Login</h1>
+    <!-- Driver login -->
 
-      <p class="subtitle">
-        Enter the driver name and password
-        created by the administrator.
-      </p>
+    <section id="loginCard" class="card">
+      <div id="phoneStep">
+        <h1>Driver sign in</h1>
 
-      <input
-        id="driverNameInput"
-        placeholder="Driver name"
-      >
+        <p id="loginIntro" class="sub">
+          Enter the WhatsApp number approved by the administrator.
+        </p>
 
-      <input
-        id="driverPasswordInput"
-        type="password"
-        placeholder="Password or PIN"
-      >
+        <label for="phone">
+          Phone number
+        </label>
 
-      <button
-        class="full"
-        onclick="driverLogin()"
-      >
-        Login
-      </button>
+        <input
+          class="field"
+          id="phone"
+          inputmode="tel"
+          autocomplete="tel"
+          placeholder="+1 978 555 1234"
+        >
 
-      <p id="loginMessage"></p>
-    </section>
-
-    <section
-      id="driverApp"
-      class="hidden"
-    >
-      <div class="card">
-        <div class="driver-header">
-          <div>
-            <span class="route-badge">
-              ACTIVE ROUTE
-            </span>
-
-            <h1>
-              Welcome,
-              <span id="driverName"></span>
-            </h1>
-
-            <p class="subtitle">
-              <span id="routeDay"></span>
-              —
-              <span id="assignmentCount">
-                0
-              </span>
-              assigned stop(s)
-            </p>
-          </div>
-
-          <button
-            class="red"
-            onclick="logout()"
-          >
-            Logout
-          </button>
-        </div>
+        <button
+          class="btn"
+          id="sendCodeBtn"
+          type="button"
+          onclick="requestCode()"
+        >
+          <i class="fa-brands fa-whatsapp"></i>
+          Send login code
+        </button>
       </div>
 
-      <div class="card">
-        <div
-          style="
-            display:flex;
-            justify-content:space-between;
-            gap:10px;
-            margin-bottom:10px;
-          "
-        >
-          <b>Route Progress</b>
+      <div id="codeStep" class="hidden">
+        <h1>Enter verification code</h1>
 
-          <span
-            id="progressText"
-            class="subtitle"
+        <p class="sub">
+          We sent a six-digit code to the approved WhatsApp number.
+        </p>
+
+        <input
+          class="field"
+          id="code"
+          inputmode="numeric"
+          autocomplete="one-time-code"
+          maxlength="6"
+          placeholder="000000"
+        >
+
+        <button
+          class="btn green"
+          type="button"
+          onclick="verifyCode()"
+        >
+          <i class="fa-solid fa-circle-check"></i>
+          Verify and open route
+        </button>
+
+        <button
+          class="btn ghost"
+          type="button"
+          onclick="backToPhone()"
+        >
+          <i class="fa-solid fa-arrow-left"></i>
+          Use another number
+        </button>
+      </div>
+
+      <p id="loginMessage" class="sub"></p>
+    </section>
+
+    <!-- Driver application -->
+
+    <section id="driverApp" class="hidden">
+      <section class="card hero">
+        <div>
+          <span class="pill">
+            <i class="fa-solid fa-route"></i>
+            DRIVER ROUTES
+          </span>
+
+          <h1>
+            Welcome,
+            <span id="driverName"></span>
+          </h1>
+
+          <p class="sub">
+            <span id="routeDay"></span>
+            —
+            <span id="stopCount">0</span>
+            assigned stop(s)
+          </p>
+        </div>
+
+        <button
+          class="btn red logout-button"
+          type="button"
+          onclick="logout()"
+        >
+          <i class="fa-solid fa-arrow-right-from-bracket"></i>
+          Logout
+        </button>
+      </section>
+
+      <!-- Day selection -->
+
+      <section class="card day-card">
+        <div class="day-card-header">
+          <h2>Select delivery day</h2>
+
+          <p class="sub">
+            Choose the route you want to view or update.
+          </p>
+        </div>
+
+        <div class="day-tabs">
+          <button
+            class="day-tab"
+            type="button"
+            data-day="Tuesday"
+            onclick="selectDay('Tuesday')"
           >
+            Tuesday
+          </button>
+
+          <button
+            class="day-tab"
+            type="button"
+            data-day="Wednesday"
+            onclick="selectDay('Wednesday')"
+          >
+            Wednesday
+          </button>
+
+          <button
+            class="day-tab"
+            type="button"
+            data-day="Thursday"
+            onclick="selectDay('Thursday')"
+          >
+            Thursday
+          </button>
+
+          <button
+            class="day-tab"
+            type="button"
+            data-day="Friday"
+            onclick="selectDay('Friday')"
+          >
+            Friday
+          </button>
+        </div>
+      </section>
+
+      <!-- Route progress -->
+
+      <section class="card">
+        <div class="route-head">
+          <strong>
+            <i class="fa-solid fa-chart-line"></i>
+            Route progress
+          </strong>
+
+          <span id="progressText" class="sub">
             0 of 0 delivered
           </span>
         </div>
 
-        <div class="progress-track">
-          <div
-            id="progressFill"
-            class="progress-fill"
-          ></div>
+        <div class="progress">
+          <div id="progressBar"></div>
         </div>
-      </div>
+      </section>
 
       <div id="routeCards"></div>
     </section>
-  </div>
+  </main>
 
   <script>
-    let routeData = null;
+    "use strict";
 
-    const STATUS_LEVEL = {
+    const invite =
+      new URLSearchParams(window.location.search)
+        .get("invite") || "";
+
+    const deliveryDays = [
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday"
+    ];
+
+    const statusRank = {
       not_started: 0,
       "10min": 1,
       "5min": 2,
@@ -365,23 +759,18 @@
       delivered: 4
     };
 
-    async function apiRequest(
-      url,
-      options = {}
-    ) {
-      const response = await fetch(
-        url,
-        {
-          ...options,
+    let routeData = null;
+    let selectedDay = getDefaultDeliveryDay();
 
-          headers: {
-            "Content-Type":
-              "application/json",
+    async function api(url, options = {}) {
+      const response = await fetch(url, {
+        ...options,
 
-            ...(options.headers || {})
-          }
+        headers: {
+          "Content-Type": "application/json",
+          ...(options.headers || {})
         }
-      );
+      });
 
       let data = {};
 
@@ -394,183 +783,304 @@
       if (!response.ok) {
         throw new Error(
           data.error ||
-          "Request failed."
+          "Request failed"
         );
       }
 
       return data;
     }
 
-    async function driverLogin() {
-      const name =
-        document.getElementById(
-          "driverNameInput"
-        ).value.trim();
+    function getDefaultDeliveryDay() {
+      const easternDay =
+        new Intl.DateTimeFormat("en-US", {
+          weekday: "long",
+          timeZone: "America/New_York"
+        }).format(new Date());
 
-      const password =
-        document.getElementById(
-          "driverPasswordInput"
-        ).value;
+      return deliveryDays.includes(easternDay)
+        ? easternDay
+        : "Tuesday";
+    }
 
-      const message =
-        document.getElementById(
-          "loginMessage"
-        );
+    function showMessage(message, error = false) {
+      const element =
+        document.getElementById("loginMessage");
 
-      message.textContent =
-        "Signing in...";
+      element.textContent = message;
+      element.className =
+        error ? "error" : "sub";
+    }
+
+    async function requestCode() {
+      const button =
+        document.getElementById("sendCodeBtn");
+
+      const phoneInput =
+        document.getElementById("phone");
 
       try {
-        await apiRequest(
-          "/driver/login",
-          {
-            method: "POST",
+        button.disabled = true;
 
-            body: JSON.stringify({
-              name,
-              password
-            })
-          }
+        button.innerHTML = `
+          <i class="fa-solid fa-spinner fa-spin"></i>
+          Sending secure code
+        `;
+
+        showMessage("Sending secure code…");
+
+        const payload = invite
+          ? {
+              invite
+            }
+          : {
+              phone: phoneInput.value
+            };
+
+        await api("/driver/request-code", {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+
+        document
+          .getElementById("phoneStep")
+          .classList.add("hidden");
+
+        document
+          .getElementById("codeStep")
+          .classList.remove("hidden");
+
+        showMessage(
+          "Code sent. It expires in 10 minutes."
         );
 
-        message.textContent = "";
-
-        await loadRoute();
+        document
+          .getElementById("code")
+          .focus();
       } catch (error) {
-        message.className = "error";
+        showMessage(error.message, true);
+      } finally {
+        button.disabled = false;
 
-        message.textContent =
-          error.message;
+        button.innerHTML = `
+          <i class="fa-brands fa-whatsapp"></i>
+          Send login code
+        `;
       }
     }
 
-    async function loadRoute() {
+    async function verifyCode() {
+      const phoneInput =
+        document.getElementById("phone");
+
+      const codeInput =
+        document.getElementById("code");
+
       try {
-        routeData =
-          await apiRequest(
-            "/driver/me"
-          );
+        showMessage("Verifying secure code…");
+
+        const payload = invite
+          ? {
+              invite,
+              code: codeInput.value
+            }
+          : {
+              phone: phoneInput.value,
+              code: codeInput.value
+            };
+
+        await api("/driver/verify-code", {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+
+        await loadRoute(selectedDay);
+      } catch (error) {
+        showMessage(error.message, true);
+      }
+    }
+
+    function backToPhone() {
+      document
+        .getElementById("codeStep")
+        .classList.add("hidden");
+
+      document
+        .getElementById("phoneStep")
+        .classList.remove("hidden");
+
+      showMessage("");
+    }
+
+    async function selectDay(day) {
+      if (!deliveryDays.includes(day)) {
+        return;
+      }
+
+      selectedDay = day;
+
+      setActiveDayButton();
+      await loadRoute(day);
+    }
+
+    async function loadRoute(day = selectedDay) {
+      const routeCards =
+        document.getElementById("routeCards");
+
+      selectedDay =
+        deliveryDays.includes(day)
+          ? day
+          : getDefaultDeliveryDay();
+
+      setActiveDayButton();
+
+      routeCards.innerHTML = `
+        <div class="route-loading">
+          <div class="spinner"></div>
+        </div>
+      `;
+
+      try {
+        routeData = await api(
+          `/driver/me?day=${encodeURIComponent(selectedDay)}`
+        );
 
         document
-          .getElementById(
-            "loginCard"
-          )
-          .classList.add(
-            "hidden"
-          );
+          .getElementById("loginCard")
+          .classList.add("hidden");
 
         document
-          .getElementById(
-            "driverApp"
-          )
-          .classList.remove(
-            "hidden"
-          );
+          .getElementById("driverApp")
+          .classList.remove("hidden");
 
         document
-          .getElementById(
-            "driverName"
-          )
+          .getElementById("driverName")
           .textContent =
             routeData.driver.name;
 
         document
-          .getElementById(
-            "routeDay"
-          )
+          .getElementById("routeDay")
           .textContent =
             routeData.day;
 
         document
-          .getElementById(
-            "assignmentCount"
-          )
+          .getElementById("stopCount")
           .textContent =
             routeData.assignments.length;
 
+        selectedDay = routeData.day;
+
+        setActiveDayButton();
         renderRoute();
       } catch (error) {
         document
-          .getElementById(
-            "loginCard"
-          )
-          .classList.remove(
-            "hidden"
-          );
+          .getElementById("loginCard")
+          .classList.remove("hidden");
 
         document
-          .getElementById(
-            "driverApp"
-          )
-          .classList.add(
-            "hidden"
+          .getElementById("driverApp")
+          .classList.add("hidden");
+
+        if (
+          error.message
+            .toLowerCase()
+            .includes("login")
+        ) {
+          showMessage(
+            "Enter your approved phone number to sign in."
           );
+
+          return;
+        }
+
+        showMessage(error.message, true);
       }
+    }
+
+    function setActiveDayButton() {
+      document
+        .querySelectorAll(".day-tab")
+        .forEach((button) => {
+          button.classList.toggle(
+            "active",
+            button.dataset.day === selectedDay
+          );
+        });
     }
 
     function renderRoute() {
+      const routeCards =
+        document.getElementById("routeCards");
+
       const assignments =
-        routeData.assignments || [];
+        Array.isArray(routeData?.assignments)
+          ? routeData.assignments
+          : [];
 
-      const container =
-        document.getElementById(
-          "routeCards"
-        );
+      document
+        .getElementById("routeDay")
+        .textContent =
+          routeData.day;
 
-      if (
-        assignments.length === 0
-      ) {
-        container.innerHTML = `
-          <div class="card empty">
-            <h2>No assigned stops</h2>
+      document
+        .getElementById("stopCount")
+        .textContent =
+          assignments.length;
 
-            <p>
-              Ask the administrator to assign
-              you a stop for ${escapeHtml(
-                routeData.day
-              )}.
+      if (!assignments.length) {
+        routeCards.innerHTML = `
+          <section class="card empty-route">
+            <div class="empty-route-icon">
+              <i class="fa-solid fa-calendar-xmark"></i>
+            </div>
+
+            <h2>
+              No route assigned for
+              ${escapeHtml(routeData.day)}
+            </h2>
+
+            <p class="sub">
+              You do not currently have any delivery stops
+              assigned for ${escapeHtml(routeData.day)}.
+              Select another day above or ask the administrator
+              to assign a route.
             </p>
-          </div>
+          </section>
         `;
-
-        updateProgress();
-
-        return;
+      } else {
+        routeCards.innerHTML =
+          assignments
+            .map(stopCard)
+            .join("");
       }
 
-      container.innerHTML =
-        assignments
-          .map(createStopCard)
-          .join("");
+      const delivered =
+        assignments.filter(
+          (assignment) =>
+            assignment.route_status === "delivered"
+        ).length;
 
-      updateProgress();
+      document
+        .getElementById("progressText")
+        .textContent =
+          `${delivered} of ${assignments.length} delivered`;
+
+      document
+        .getElementById("progressBar")
+        .style.width =
+          assignments.length
+            ? `${(delivered / assignments.length) * 100}%`
+            : "0%";
     }
 
-    function createStopCard(
-      assignment
-    ) {
-      const currentLevel =
-        STATUS_LEVEL[
-          assignment.route_status
-        ] || 0;
+    function stopCard(assignment) {
+      const currentStatus =
+        statusRank[assignment.route_status] || 0;
 
       const buttons = [
-        {
-          status: "10min",
-          label: "10 Minutes Away"
-        },
-        {
-          status: "5min",
-          label: "5 Minutes Away"
-        },
-        {
-          status: "arrived",
-          label: "Arrived"
-        },
-        {
-          status: "delivered",
-          label: "Delivered"
-        }
+        ["10min", "10 Minutes Away", "fa-solid fa-clock"],
+        ["5min", "5 Minutes Away", "fa-solid fa-truck-fast"],
+        ["arrived", "Arrived", "fa-solid fa-location-dot"],
+        ["delivered", "Delivered", "fa-solid fa-circle-check"]
       ];
 
       return `
@@ -578,233 +1088,151 @@
           <div class="stop-top">
             <div>
               <h2>
-                ${escapeHtml(
-                  assignment.stop
-                )}
+                ${escapeHtml(assignment.stop)}
               </h2>
 
-              <p class="subtitle">
-                ${escapeHtml(
-                  assignment.time || ""
-                )}
+              <p class="sub">
+                <i class="fa-regular fa-clock"></i>
+                ${escapeHtml(assignment.time)}
               </p>
             </div>
 
-            <span class="count-badge">
-              ${Number(
-                assignment.confirmed_count ||
-                0
-              )}
+            <span class="count">
+              ${Number(assignment.confirmed_count || 0)}
               confirmed
             </span>
           </div>
 
-          <div class="button-grid">
-            ${
-              buttons
-                .map((button) => {
-                  const used =
-                    currentLevel >=
-                    STATUS_LEVEL[
-                      button.status
-                    ];
+          <div class="steps">
+            ${buttons
+              .map(([status, label, icon]) => {
+                const hasBeenReached =
+                  currentStatus >= statusRank[status];
 
-                  return `
-                    <button
-                      class="${
-                        button.status ===
-                        "delivered"
-                          ? "green"
-                          : ""
-                      } ${
-                        used
-                          ? "used"
-                          : ""
-                      }"
-                      onclick="notifyStop(
-                        '${escapeHtml(
-                          assignment.stop
-                        )}',
-                        '${button.status}'
-                      )"
-                    >
-                      ${
-                        used
-                          ? "✓ "
-                          : ""
-                      }
-                      ${button.label}
-                    </button>
-                  `;
-                })
-                .join("")
-            }
+                return `
+                  <button
+                    class="
+                      btn
+                      ${status === "delivered" ? "green" : ""}
+                      ${hasBeenReached ? "used" : ""}
+                    "
+                    type="button"
+                    onclick="sendUpdate(
+                      '${escapeAttribute(assignment.stop)}',
+                      '${status}'
+                    )"
+                  >
+                    <i class="${icon}"></i>
+
+                    ${hasBeenReached ? "✓ " : ""}
+                    ${label}
+                  </button>
+                `;
+              })
+              .join("")}
           </div>
 
           <div
-            id="message-${slug(
-              assignment.stop
-            )}"
-            class="message"
+            class="status-msg"
+            id="msg-${slug(assignment.stop)}"
           >
             Current status:
-            ${labelStatus(
-              assignment.route_status
+            ${escapeHtml(
+              labelStatus(assignment.route_status)
             )}
           </div>
         </article>
       `;
     }
 
-    async function notifyStop(
-      stop,
-      status
-    ) {
+    async function sendUpdate(stop, status) {
       const label =
         labelStatus(status);
 
-      const approved =
-        confirm(
-          `Send "${label}" to all confirmed customers at ${stop}?`
-        );
+      const confirmed = window.confirm(
+        `Send "${label}" to all confirmed customers at ${stop} for ${selectedDay}?`
+      );
 
-      if (!approved) {
+      if (!confirmed) {
         return;
       }
 
       const messageBox =
         document.getElementById(
-          `message-${slug(stop)}`
+          `msg-${slug(stop)}`
         );
 
+      messageBox.className =
+        "status-msg sending";
+
       messageBox.textContent =
-        "Sending...";
+        `Sending ${label} notification…`;
 
       try {
-        const data =
-          await apiRequest(
-            "/driver/notify-stop",
-            {
-              method: "POST",
+        const result = await api(
+          "/driver/notify-stop",
+          {
+            method: "POST",
 
-              body: JSON.stringify({
-                day: routeData.day,
-                stop,
-                status
-              })
-            }
-          );
+            body: JSON.stringify({
+              day: selectedDay,
+              stop,
+              status
+            })
+          }
+        );
 
         messageBox.className =
-          "message success";
+          "status-msg success";
 
         messageBox.textContent =
-          `${label} sent to ` +
-          `${data.sentCount} customer(s).`;
+          `✓ ${label} sent to ${Number(
+            result.sentCount || 0
+          )} customer(s).`;
 
         const assignment =
           routeData.assignments.find(
-            (item) =>
-              item.stop === stop
+            (item) => item.stop === stop
           );
 
         if (assignment) {
-          assignment.route_status =
-            status;
+          assignment.route_status = status;
         }
 
         renderRoute();
       } catch (error) {
         messageBox.className =
-          "message error";
+          "status-msg failure";
 
         messageBox.textContent =
           error.message;
       }
     }
 
-    function updateProgress() {
-      const assignments =
-        routeData.assignments || [];
-
-      const delivered =
-        assignments.filter(
-          (assignment) =>
-            assignment.route_status ===
-            "delivered"
-        ).length;
-
-      const total =
-        assignments.length;
-
-      document
-        .getElementById(
-          "progressText"
-        )
-        .textContent =
-          `${delivered} of ` +
-          `${total} delivered`;
-
-      const percent =
-        total === 0
-          ? 0
-          : (
-              delivered /
-              total
-            ) * 100;
-
-      document
-        .getElementById(
-          "progressFill"
-        )
-        .style.width =
-          `${percent}%`;
-    }
-
     async function logout() {
-      await fetch(
-        "/driver/logout",
-        {
-          method: "POST"
-        }
-      );
+      await fetch("/driver/logout", {
+        method: "POST"
+      });
 
-      location.href =
+      window.location.href =
         "/driver-login";
     }
 
     function labelStatus(status) {
-      const labels = {
-        not_started:
-          "Not started",
-
-        "10min":
-          "10-minute notice sent",
-
-        "5min":
-          "5-minute notice sent",
-
-        arrived:
-          "Driver arrived",
-
-        delivered:
-          "Delivered"
-      };
-
-      return (
-        labels[status] ||
-        status ||
-        "Not started"
-      );
+      return {
+        not_started: "Not started",
+        "10min": "10-minute notice sent",
+        "5min": "5-minute notice sent",
+        arrived: "Arrived",
+        delivered: "Delivered"
+      }[status] || status;
     }
 
     function slug(value) {
-      return String(value)
+      return String(value || "")
         .toLowerCase()
-        .replace(
-          /[^a-z0-9]+/g,
-          "-"
-        );
+        .replace(/[^a-z0-9]/g, "-")
+        .replace(/^-+|-+$/g, "");
     }
 
     function escapeHtml(value) {
@@ -816,7 +1244,47 @@
         .replaceAll("'", "&#039;");
     }
 
-    loadRoute();
+    function escapeAttribute(value) {
+      return escapeHtml(value)
+        .replaceAll("\n", " ")
+        .replaceAll("\r", " ");
+    }
+
+    if (invite) {
+      document
+        .getElementById("phone")
+        .classList.add("hidden");
+
+      document
+        .getElementById("loginIntro")
+        .textContent =
+          "Your secure invitation is ready. Tap below to receive a one-time WhatsApp code.";
+
+      document
+        .getElementById("sendCodeBtn")
+        .innerHTML = `
+          <i class="fa-brands fa-whatsapp"></i>
+          Send my login code
+        `;
+    }
+
+    document
+      .getElementById("phone")
+      .addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          requestCode();
+        }
+      });
+
+    document
+      .getElementById("code")
+      .addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          verifyCode();
+        }
+      });
+
+    loadRoute(selectedDay);
   </script>
 </body>
 </html>
