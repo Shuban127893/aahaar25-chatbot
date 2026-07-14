@@ -13,12 +13,9 @@ function createSquareRouter({
   const router = express.Router();
 
   router.get("/health", (req, res) => {
-    const configuration =
-      getSquareConfiguration();
-
     return res.json({
       success: true,
-      square: configuration,
+      square: getSquareConfiguration(),
     });
   });
 
@@ -103,7 +100,7 @@ function createSquareRouter({
 
       if (!payment) {
         console.warn(
-          "Square webhook did not contain payment data"
+          "Square webhook contained no payment"
         );
 
         return res.sendStatus(200);
@@ -123,9 +120,14 @@ function createSquareRouter({
         }
       );
 
+      /*
+      payment.created is commonly APPROVED first.
+      Only confirm the local order when Square
+      later reports COMPLETED.
+      */
+
       if (
-        payment.status !==
-        "COMPLETED"
+        payment.status !== "COMPLETED"
       ) {
         console.log(
           "Square payment is not completed:",
@@ -188,11 +190,6 @@ function createSquareRouter({
               `,
               [referenceId]
             );
-
-          console.log(
-            "Orders found using reference ID:",
-            orderResult.rows.length
-          );
         }
       }
 
@@ -230,19 +227,42 @@ function createSquareRouter({
         }
       );
 
+      /*
+      Never reopen an order that was cancelled,
+      refunded, is awaiting a refund, or delivered.
+      */
+
+      const protectedStatuses = [
+        "confirmed",
+        "delivered",
+        "cancelled",
+        "refunded",
+        "refund_pending",
+      ];
+
       if (
-        existingOrder.status ===
-          "confirmed" ||
-        existingOrder.status ===
-          "delivered"
+        protectedStatuses.includes(
+          existingOrder.status
+        )
       ) {
         console.log(
-          "Order was already confirmed or delivered:",
-          existingOrder.order_id
+          "Square webhook ignored because local order status is protected:",
+          {
+            orderId:
+              existingOrder.order_id,
+
+            status:
+              existingOrder.status,
+          }
         );
 
         return res.sendStatus(200);
       }
+
+      /*
+      Only a genuinely pending order may become
+      confirmed after a completed payment.
+      */
 
       const updatedResult =
         await pool.query(
@@ -254,10 +274,7 @@ function createSquareRouter({
             square_payment_id = $1,
             square_receipt_url = $2
           WHERE order_id = $3
-            AND status NOT IN (
-              'confirmed',
-              'delivered'
-            )
+            AND status = 'pending'
           RETURNING *
           `,
           [
@@ -271,7 +288,7 @@ function createSquareRouter({
         updatedResult.rows.length === 0
       ) {
         console.warn(
-          "Order was not updated:",
+          "Order was not updated because it was no longer pending:",
           existingOrder.order_id
         );
 
@@ -286,9 +303,7 @@ function createSquareRouter({
         confirmedOrder.order_id
       );
 
-      if (
-        confirmedOrder.phone
-      ) {
+      if (confirmedOrder.phone) {
         const messageResult =
           await sendWhatsAppMessage(
             confirmedOrder.phone,
@@ -307,14 +322,8 @@ function createSquareRouter({
               messageResult.ok,
 
             status:
-              messageResult.status ||
-              null,
+              messageResult.status || null,
           }
-        );
-      } else {
-        console.warn(
-          "Confirmed order has no phone number:",
-          confirmedOrder.order_id
         );
       }
 
