@@ -380,6 +380,8 @@ app.use(
     pool,
     createSquarePaymentLink,
     generateOrderId,
+    client,
+    CHATBOT_SYSTEM_PROMPT,
   })
 );
 

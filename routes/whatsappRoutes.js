@@ -11,6 +11,8 @@ function createWhatsAppRouter({
   pool,
   createSquarePaymentLink,
   generateOrderId,
+  client,
+  CHATBOT_SYSTEM_PROMPT,
 }) {
   const router = express.Router();
 
@@ -395,6 +397,56 @@ function createWhatsAppRouter({
         );
 
         return res.sendStatus(200);
+      }
+
+      /*
+      Nothing matched a keyword or an active
+      order step. Ask Claude, using the same
+      business-data system prompt as the website
+      chatbot, so free-form questions get a real
+      answer instead of just the main menu.
+
+      This never touches the ordering flow above,
+      since every ordering step already returned
+      a response earlier in this function.
+      */
+
+      try {
+        const aiResponse =
+          await client.messages.create({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 300,
+            system: CHATBOT_SYSTEM_PROMPT,
+            messages: [
+              {
+                role: "user",
+                content: userText,
+              },
+            ],
+          });
+
+        const aiReply = aiResponse.content
+          .filter(
+            (block) => block.type === "text"
+          )
+          .map((block) => block.text)
+          .join("\n");
+
+        if (aiReply) {
+          await sendWhatsAppMessage(
+            from,
+            aiReply
+          );
+
+          await sendMainMenu(from);
+
+          return res.sendStatus(200);
+        }
+      } catch (error) {
+        console.error(
+          "WhatsApp AI fallback error:",
+          error
+        );
       }
 
       await sendMainMenu(from);
