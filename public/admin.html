@@ -2085,6 +2085,11 @@
           <span>Driver Activity</span>
         </button>
 
+        <button class="nav-item" data-tab="business">
+          <i class="fa-solid fa-utensils"></i>
+          <span>Menu & Delivery</span>
+        </button>
+
         <button class="nav-item" data-tab="settings">
           <i class="fa-solid fa-gear"></i>
           <span>Settings</span>
@@ -2698,6 +2703,151 @@
           </section>
         </section>
 
+        <section id="tab-business" class="page-section hidden">
+          <section class="panel" style="margin-bottom:17px;">
+            <div class="panel-header">
+              <div class="panel-title">
+                <div class="panel-icon">
+                  <i class="fa-solid fa-truck-fast"></i>
+                </div>
+
+                <div>
+                  <h2>Delivery stops</h2>
+
+                  <p>
+                    Add or remove the day, location, and time the
+                    chatbot tells customers about.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div id="stopsList" class="security-list"></div>
+
+            <button
+              class="btn full"
+              type="button"
+              style="margin-top:14px;"
+              onclick="addStopRow()"
+            >
+              <i class="fa-solid fa-plus"></i>
+              Add stop
+            </button>
+          </section>
+
+          <section class="panel" style="margin-bottom:17px;">
+            <div class="panel-header">
+              <div class="panel-title">
+                <div class="panel-icon">
+                  <i class="fa-solid fa-box-open"></i>
+                </div>
+
+                <div>
+                  <h2>Lunch box includes</h2>
+
+                  <p>
+                    What customers are told is inside the lunch box,
+                    on the website chat, WhatsApp, and the order
+                    confirmation message.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div id="lunchItemsList" class="security-list"></div>
+
+            <div
+              style="display:flex; gap:10px; margin-top:14px;"
+            >
+              <input
+                id="newLunchItemInput"
+                class="field"
+                placeholder="e.g. Curd Rice"
+                style="flex:1;"
+              >
+
+              <button
+                class="btn"
+                type="button"
+                onclick="addLunchItem()"
+              >
+                <i class="fa-solid fa-plus"></i>
+                Add
+              </button>
+            </div>
+          </section>
+
+          <section class="panel" style="margin-bottom:17px;">
+            <div class="panel-header">
+              <div class="panel-title">
+                <div class="panel-icon">
+                  <i class="fa-solid fa-gear"></i>
+                </div>
+
+                <div>
+                  <h2>Other delivery settings</h2>
+
+                  <p>
+                    Phone number, pricing, cutoff time, and delivery
+                    rules. Edited as raw data.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <textarea
+                id="otherDeliveryText"
+                class="field"
+                spellcheck="false"
+                style="width:100%; min-height:220px; font-family:monospace; font-size:13px; line-height:1.5; resize:vertical;"
+              ></textarea>
+            </div>
+          </section>
+
+          <section class="panel" style="margin-bottom:17px;">
+            <div class="panel-header">
+              <div class="panel-title">
+                <div class="panel-icon">
+                  <i class="fa-solid fa-utensils"></i>
+                </div>
+
+                <div>
+                  <h2>Menu info</h2>
+
+                  <p>
+                    Every menu category, item, and price the chatbot
+                    is allowed to mention.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div class="field-group">
+              <textarea
+                id="menuDataText"
+                class="field"
+                spellcheck="false"
+                style="width:100%; min-height:320px; font-family:monospace; font-size:13px; line-height:1.5; resize:vertical;"
+              ></textarea>
+            </div>
+          </section>
+
+          <section class="panel">
+            <button
+              id="saveBusinessDataButton"
+              class="btn full"
+              type="button"
+              onclick="saveBusinessData()"
+            >
+              <i class="fa-solid fa-floppy-disk"></i>
+              Save changes
+            </button>
+
+            <div id="businessDataMessage"></div>
+          </section>
+        </section>
+
         <section id="tab-settings" class="page-section hidden">
           <div class="settings-grid">
             <article class="settings-card">
@@ -2820,6 +2970,12 @@
         title: "Driver Activity",
         description:
           "Review delivery updates sent to customers."
+      },
+
+      business: {
+        title: "Menu & Delivery",
+        description:
+          "Edit the delivery stops and menu data the chatbot uses to answer customers."
       },
 
       settings: {
@@ -3052,7 +3208,8 @@
           orders: loadOrders,
           drivers: loadDrivers,
           assignments: loadAssignments,
-          activity: loadActivity
+          activity: loadActivity,
+          business: loadBusinessData
         };
 
         if (loaders[state.activeTab]) {
@@ -3551,6 +3708,297 @@
           false,
           "Create driver",
           "fa-solid fa-user-plus"
+        );
+      }
+    }
+
+    const businessState = {
+      stops: [],
+      lunchItems: []
+    };
+
+    const DELIVERY_DAYS = [
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday"
+    ];
+
+    function renderStops() {
+      const container =
+        document.getElementById("stopsList");
+
+      if (businessState.stops.length === 0) {
+        container.innerHTML =
+          `<p style="color:var(--muted); font-size:14px;">No delivery stops yet. Click "Add stop" below.</p>`;
+
+        return;
+      }
+
+      container.innerHTML = businessState.stops
+        .map((stop, index) => `
+          <div class="security-row" style="align-items:center; gap:10px;">
+            <select
+              onchange="updateStopField(${index}, 'day', this.value)"
+              style="padding:9px 10px; border-radius:var(--radius-sm); border:1px solid var(--border); font-family:inherit; font-size:13px; color:var(--text); background:#fff;"
+            >
+              ${DELIVERY_DAYS.map((day) => `
+                <option value="${day}" ${stop.day === day ? "selected" : ""}>${day}</option>
+              `).join("")}
+            </select>
+
+            <input
+              class="field"
+              value="${escapeHtml(stop.location || "")}"
+              placeholder="Location name"
+              oninput="updateStopField(${index}, 'location', this.value)"
+              style="flex:1;"
+            >
+
+            <input
+              class="field"
+              value="${escapeHtml(stop.time || "")}"
+              placeholder="e.g. 11:30 AM"
+              oninput="updateStopField(${index}, 'time', this.value)"
+              style="width:170px;"
+            >
+
+            <input
+              class="field"
+              value="${escapeHtml(stop.address || "")}"
+              placeholder="Address (optional)"
+              oninput="updateStopField(${index}, 'address', this.value)"
+              style="width:170px;"
+            >
+
+            <button
+              type="button"
+              onclick="removeStopRow(${index})"
+              aria-label="Remove stop"
+              style="border:none; background:none; color:var(--red-600); cursor:pointer; font-size:16px; padding:6px;"
+            >
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        `)
+        .join("");
+    }
+
+    function updateStopField(index, field, value) {
+      businessState.stops[index][field] = value;
+    }
+
+    function addStopRow() {
+      businessState.stops.push({
+        day: "Tuesday",
+        location: "",
+        time: "",
+        address: ""
+      });
+
+      renderStops();
+    }
+
+    function removeStopRow(index) {
+      businessState.stops.splice(index, 1);
+      renderStops();
+    }
+
+    function renderLunchItems() {
+      const container = document.getElementById(
+        "lunchItemsList"
+      );
+
+      if (businessState.lunchItems.length === 0) {
+        container.innerHTML =
+          `<p style="color:var(--muted); font-size:14px;">No items added yet.</p>`;
+
+        return;
+      }
+
+      container.innerHTML = businessState.lunchItems
+        .map((item, index) => `
+          <div class="security-row" style="align-items:center; gap:10px;">
+            <input
+              class="field"
+              value="${escapeHtml(item)}"
+              oninput="updateLunchItem(${index}, this.value)"
+              style="flex:1;"
+            >
+
+            <button
+              type="button"
+              onclick="removeLunchItem(${index})"
+              aria-label="Remove item"
+              style="border:none; background:none; color:var(--red-600); cursor:pointer; font-size:16px; padding:6px;"
+            >
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        `)
+        .join("");
+    }
+
+    function updateLunchItem(index, value) {
+      businessState.lunchItems[index] = value;
+    }
+
+    function addLunchItem() {
+      const input = document.getElementById(
+        "newLunchItemInput"
+      );
+
+      const value = input.value.trim();
+
+      if (!value) {
+        return;
+      }
+
+      businessState.lunchItems.push(value);
+      input.value = "";
+
+      renderLunchItems();
+    }
+
+    function removeLunchItem(index) {
+      businessState.lunchItems.splice(index, 1);
+      renderLunchItems();
+    }
+
+    async function loadBusinessData() {
+      const otherBox = document.getElementById(
+        "otherDeliveryText"
+      );
+
+      const menuBox =
+        document.getElementById("menuDataText");
+
+      const message =
+        document.getElementById("businessDataMessage");
+
+      message.innerHTML = "";
+
+      try {
+        const result = await api(
+          "/admin/business-data"
+        );
+
+        const delivery = JSON.parse(
+          result.delivery
+        );
+
+        businessState.stops = Array.isArray(
+          delivery.deliveryStops
+        )
+          ? delivery.deliveryStops
+          : [];
+
+        businessState.lunchItems = Array.isArray(
+          delivery.lunchBoxIncludes
+        )
+          ? delivery.lunchBoxIncludes
+          : [];
+
+        const otherDelivery = { ...delivery };
+        delete otherDelivery.deliveryStops;
+        delete otherDelivery.lunchBoxIncludes;
+
+        otherBox.value = JSON.stringify(
+          otherDelivery,
+          null,
+          2
+        );
+
+        menuBox.value = result.menu;
+
+        renderStops();
+        renderLunchItems();
+      } catch (error) {
+        message.innerHTML = errorBox(error.message);
+      }
+    }
+
+    async function saveBusinessData() {
+      const otherBox = document.getElementById(
+        "otherDeliveryText"
+      );
+
+      const menuBox =
+        document.getElementById("menuDataText");
+
+      const message =
+        document.getElementById("businessDataMessage");
+
+      const button = document.getElementById(
+        "saveBusinessDataButton"
+      );
+
+      message.innerHTML = "";
+
+      let otherDelivery;
+
+      try {
+        otherDelivery = JSON.parse(
+          otherBox.value
+        );
+      } catch (error) {
+        message.innerHTML = errorBox(
+          "Other delivery settings is not valid JSON: " +
+            error.message
+        );
+
+        return;
+      }
+
+      try {
+        JSON.parse(menuBox.value);
+      } catch (error) {
+        message.innerHTML = errorBox(
+          "Menu info is not valid JSON: " +
+            error.message
+        );
+
+        return;
+      }
+
+      const mergedDelivery = {
+        ...otherDelivery,
+        deliveryStops: businessState.stops,
+        lunchBoxIncludes:
+          businessState.lunchItems
+      };
+
+      setButtonLoading(button, true, "Saving");
+
+      try {
+        const result = await api(
+          "/admin/business-data",
+          {
+            method: "POST",
+
+            body: JSON.stringify({
+              delivery: JSON.stringify(
+                mergedDelivery
+              ),
+              menu: menuBox.value
+            })
+          }
+        );
+
+        message.innerHTML = successBox(
+          result.message ||
+          "Delivery and menu data saved."
+        );
+
+        toast("Delivery and menu data saved.");
+      } catch (error) {
+        message.innerHTML = errorBox(error.message);
+      } finally {
+        setButtonLoading(
+          button,
+          false,
+          "Save changes",
+          "fa-solid fa-floppy-disk"
         );
       }
     }

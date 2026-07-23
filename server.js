@@ -144,25 +144,55 @@ const client =
 
 /*
 Business data the chatbot is allowed to use.
-Loaded once at startup so the AI never has to
-guess at delivery stops, prices, or menu items.
+
+Loaded at startup, and reloadable at runtime
+whenever an admin saves an edit through the
+"Menu & delivery" admin tab, so the chatbot
+never needs a redeploy to pick up a change.
 */
 
-const deliveryInfo = JSON.parse(
+const DELIVERY_INFO_PATH = path.join(
+  __dirname,
+  "delivery-info.json"
+);
+
+const MENU_INFO_PATH = path.join(
+  __dirname,
+  "menu-info.json"
+);
+
+let deliveryInfo = JSON.parse(
   fs.readFileSync(
-    path.join(__dirname, "delivery-info.json"),
+    DELIVERY_INFO_PATH,
     "utf8"
   )
 );
 
-const menuInfo = JSON.parse(
+let menuInfo = JSON.parse(
   fs.readFileSync(
-    path.join(__dirname, "menu-info.json"),
+    MENU_INFO_PATH,
     "utf8"
   )
 );
 
-const CHATBOT_SYSTEM_PROMPT = `You are the AAHAAR25 restaurant assistant.
+function reloadBusinessData() {
+  deliveryInfo = JSON.parse(
+    fs.readFileSync(
+      DELIVERY_INFO_PATH,
+      "utf8"
+    )
+  );
+
+  menuInfo = JSON.parse(
+    fs.readFileSync(
+      MENU_INFO_PATH,
+      "utf8"
+    )
+  );
+}
+
+function buildSystemPrompt() {
+  return `You are the AAHAAR25 restaurant assistant.
 
 Answer customer questions ONLY using the delivery and menu information provided below. Never invent delivery stops, prices, times, or menu items that are not listed here.
 
@@ -175,6 +205,8 @@ ${JSON.stringify(deliveryInfo, null, 2)}
 
 MENU INFORMATION:
 ${JSON.stringify(menuInfo, null, 2)}`;
+}
+
 
 /*
 Cookie helpers shared with the route
@@ -340,7 +372,7 @@ app.post(
         await client.messages.create({
           model: "claude-haiku-4-5-20251001",
           max_tokens: 300,
-          system: CHATBOT_SYSTEM_PROMPT,
+          system: buildSystemPrompt(),
           messages: [
             {
               role: "user",
@@ -381,7 +413,8 @@ app.use(
     createSquarePaymentLink,
     generateOrderId,
     client,
-    CHATBOT_SYSTEM_PROMPT,
+    buildSystemPrompt,
+    getDeliveryInfo: () => deliveryInfo,
   })
 );
 
@@ -411,6 +444,9 @@ app.use(
     setCookie,
     clearCookie,
     sendWhatsAppMessage,
+    DELIVERY_INFO_PATH,
+    MENU_INFO_PATH,
+    reloadBusinessData,
   })
 );
 

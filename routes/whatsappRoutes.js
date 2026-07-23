@@ -12,7 +12,8 @@ function createWhatsAppRouter({
   createSquarePaymentLink,
   generateOrderId,
   client,
-  CHATBOT_SYSTEM_PROMPT,
+  buildSystemPrompt,
+  getDeliveryInfo,
 }) {
   const router = express.Router();
 
@@ -78,6 +79,20 @@ function createWhatsAppRouter({
     }
 
     return null;
+  }
+
+  function isQuestion(text = "") {
+    const lower = text
+      .toLowerCase()
+      .trim();
+
+    if (lower.includes("?")) {
+      return true;
+    }
+
+    return /^(what|whats|how|when|where|why|does|do|is|are|can|could|will)\b/.test(
+      lower
+    );
   }
 
   function getIncomingText(message) {
@@ -209,8 +224,9 @@ function createWhatsAppRouter({
 
       if (
         userText === "START_ORDER" ||
-        lower.includes("order") ||
-        lower.includes("lunch box")
+        (!isQuestion(userText) &&
+          (lower.includes("order") ||
+            lower.includes("lunch box")))
       ) {
         userSessions[from] = {
           step: "ask_day",
@@ -346,12 +362,30 @@ function createWhatsAppRouter({
 
         delete userSessions[from];
 
+        const lunchBoxIncludes =
+          getDeliveryInfo()
+            ?.lunchBoxIncludes;
+
+        const includesText =
+          Array.isArray(
+            lunchBoxIncludes
+          ) &&
+          lunchBoxIncludes.length > 0
+            ? `\n\nYour lunch box includes:\n` +
+              lunchBoxIncludes
+                .map(
+                  (item) => `• ${item}`
+                )
+                .join("\n")
+            : "";
+
         await sendWhatsAppMessage(
           from,
           `Thanks ${order.name}. Your AAHAAR25 lunch box order request has been saved as pending.\n\n` +
             `Day: ${order.day}\n` +
-            `Stop: ${order.stop}\n\n` +
-            `Please complete payment here:\n` +
+            `Stop: ${order.stop}` +
+            includesText +
+            `\n\nPlease complete payment here:\n` +
             `${order.square_payment_link}\n\n` +
             `After payment, your order should confirm automatically.`
         );
@@ -416,7 +450,7 @@ function createWhatsAppRouter({
           await client.messages.create({
             model: "claude-haiku-4-5-20251001",
             max_tokens: 300,
-            system: CHATBOT_SYSTEM_PROMPT,
+            system: buildSystemPrompt(),
             messages: [
               {
                 role: "user",
