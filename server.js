@@ -7,7 +7,9 @@ const rateLimit = require("express-rate-limit");
 
 require("dotenv").config();
 
-const OpenAI = require("openai");
+const fs = require("fs");
+
+const Anthropic = require("@anthropic-ai/sdk");
 
 const pool = require(
   "./config/database"
@@ -131,14 +133,48 @@ app.use(
 );
 
 /*
-OpenAI client
+Claude (Anthropic) client
 */
 
 const client =
-  new OpenAI({
+  new Anthropic({
     apiKey:
-      process.env.OPENAI_API_KEY,
+      process.env.ANTHROPIC_API_KEY,
   });
+
+/*
+Business data the chatbot is allowed to use.
+Loaded once at startup so the AI never has to
+guess at delivery stops, prices, or menu items.
+*/
+
+const deliveryInfo = JSON.parse(
+  fs.readFileSync(
+    path.join(__dirname, "delivery-info.json"),
+    "utf8"
+  )
+);
+
+const menuInfo = JSON.parse(
+  fs.readFileSync(
+    path.join(__dirname, "menu-info.json"),
+    "utf8"
+  )
+);
+
+const CHATBOT_SYSTEM_PROMPT = `You are the AAHAAR25 restaurant assistant.
+
+Answer customer questions ONLY using the delivery and menu information provided below. Never invent delivery stops, prices, times, or menu items that are not listed here.
+
+If a customer asks about a delivery location that is not listed, respond politely using this message: "${deliveryInfo.unsupportedLocationResponse}"
+
+Keep answers short, friendly, and accurate. If you don't have enough information to answer, tell the customer to call ${deliveryInfo.phone}.
+
+DELIVERY INFORMATION:
+${JSON.stringify(deliveryInfo, null, 2)}
+
+MENU INFORMATION:
+${JSON.stringify(menuInfo, null, 2)}`;
 
 /*
 Cookie helpers shared with the route
@@ -301,15 +337,25 @@ app.post(
       }
 
       const response =
-        await client.responses.create({
-          model: "gpt-4o-mini",
-          input: userMessage,
-          max_output_tokens: 300,
+        await client.messages.create({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 300,
+          system: CHATBOT_SYSTEM_PROMPT,
+          messages: [
+            {
+              role: "user",
+              content: userMessage,
+            },
+          ],
         });
 
+      const replyText = response.content
+        .filter((block) => block.type === "text")
+        .map((block) => block.text)
+        .join("\n");
+
       return res.json({
-        reply:
-          response.output_text,
+        reply: replyText,
       });
     } catch (error) {
       console.error(
