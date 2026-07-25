@@ -1280,6 +1280,79 @@
       background: var(--surface-soft);
     }
 
+    .stop-row {
+      display: grid;
+      grid-template-columns: 130px 1fr 150px 150px 32px;
+      gap: 10px;
+      align-items: center;
+      padding: 10px;
+      border: 1px solid var(--border-light);
+      border-radius: 13px;
+      background: var(--surface-soft);
+      margin-bottom: 10px;
+    }
+
+    .stop-row select,
+    .stop-row input {
+      width: 100%;
+      min-width: 0;
+      min-height: 40px;
+      padding: 9px 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-family: inherit;
+      font-size: 13px;
+      color: var(--text);
+      background: #fff;
+    }
+
+    .row-delete-btn {
+      border: none;
+      background: none;
+      color: var(--red-600);
+      cursor: pointer;
+      font-size: 16px;
+      padding: 6px;
+      justify-self: center;
+    }
+
+    .menu-category-block {
+      margin-bottom: 22px;
+    }
+
+    .menu-category-title {
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--text);
+      margin-bottom: 10px;
+      text-transform: capitalize;
+    }
+
+    .menu-item-row {
+      display: grid;
+      grid-template-columns: 1fr 110px 32px;
+      gap: 10px;
+      align-items: center;
+      padding: 10px;
+      border: 1px solid var(--border-light);
+      border-radius: 13px;
+      background: var(--surface-soft);
+      margin-bottom: 8px;
+    }
+
+    .menu-item-row input {
+      width: 100%;
+      min-width: 0;
+      min-height: 40px;
+      padding: 9px 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-family: inherit;
+      font-size: 13px;
+      color: var(--text);
+      background: #fff;
+    }
+
     .security-row i {
       margin-top: 2px;
       color: var(--green-700);
@@ -2813,24 +2886,17 @@
                 </div>
 
                 <div>
-                  <h2>Menu info</h2>
+                  <h2>Menu items</h2>
 
                   <p>
-                    Every menu category, item, and price the chatbot
-                    is allowed to mention.
+                    Edit a name or price directly, delete an item, or
+                    add a new one to any category.
                   </p>
                 </div>
               </div>
             </div>
 
-            <div class="field-group">
-              <textarea
-                id="menuDataText"
-                class="field"
-                spellcheck="false"
-                style="width:100%; min-height:320px; font-family:monospace; font-size:13px; line-height:1.5; resize:vertical;"
-              ></textarea>
-            </div>
+            <div id="menuCategoriesList"></div>
           </section>
 
           <section class="panel">
@@ -2927,19 +2993,140 @@
   <script>
     "use strict";
 
-    const DAYS = [
+    const CANONICAL_DAY_ORDER = [
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+      "Sunday",
+      "Monday"
+    ];
+
+    // Fallback defaults, used only until the
+    // real delivery data loads from the server.
+    let DAYS = [
       "Tuesday",
       "Wednesday",
       "Thursday",
       "Friday"
     ];
 
-    const STOPS = [
+    let STOPS = [
       "Gateway Village",
       "Discovery Place",
       "Ally Center",
       "One Wells Fargo"
     ];
+
+    let stopTimesMap = {
+      "Gateway Village": "11:30 AM",
+      "Discovery Place": "11:45 AM",
+      "Ally Center": "12:00 PM",
+      "One Wells Fargo": "12:30 PM"
+    };
+
+    async function refreshDaysAndStops() {
+      try {
+        const result = await api(
+          "/admin/business-data"
+        );
+
+        const delivery = JSON.parse(
+          result.delivery
+        );
+
+        const stops = Array.isArray(
+          delivery.deliveryStops
+        )
+          ? delivery.deliveryStops
+          : [];
+
+        const uniqueDays = [
+          ...new Set(
+            stops
+              .map((s) => s.day)
+              .filter(Boolean)
+          )
+        ];
+
+        uniqueDays.sort(
+          (a, b) =>
+            CANONICAL_DAY_ORDER.indexOf(a) -
+            CANONICAL_DAY_ORDER.indexOf(b)
+        );
+
+        const uniqueStops = [
+          ...new Set(
+            stops
+              .map((s) => s.location)
+              .filter(Boolean)
+          )
+        ];
+
+        if (uniqueDays.length > 0) {
+          DAYS = uniqueDays;
+        }
+
+        if (uniqueStops.length > 0) {
+          STOPS = uniqueStops;
+        }
+
+        const timesMap = {};
+
+        for (const stop of stops) {
+          if (stop.location) {
+            timesMap[stop.location] =
+              stop.time || "";
+          }
+        }
+
+        if (Object.keys(timesMap).length > 0) {
+          stopTimesMap = timesMap;
+        }
+
+        populateOrderFilterOptions();
+      } catch (error) {
+        console.error(
+          "Could not refresh days/stops:",
+          error.message
+        );
+      }
+    }
+
+    function populateOrderFilterOptions() {
+      const dayFilter =
+        document.getElementById("dayFilter");
+
+      const stopFilter =
+        document.getElementById("stopFilter");
+
+      if (dayFilter) {
+        const currentValue = dayFilter.value;
+
+        dayFilter.innerHTML =
+          `<option value="">All days</option>` +
+          DAYS.map(
+            (day) =>
+              `<option value="${escapeHtml(day)}">${escapeHtml(day)}</option>`
+          ).join("");
+
+        dayFilter.value = currentValue;
+      }
+
+      if (stopFilter) {
+        const currentValue = stopFilter.value;
+
+        stopFilter.innerHTML =
+          `<option value="">All stops</option>` +
+          STOPS.map(
+            (stop) =>
+              `<option value="${escapeHtml(stop)}">${escapeHtml(stop)}</option>`
+          ).join("");
+
+        stopFilter.value = currentValue;
+      }
+    }
 
     const PAGE_DETAILS = {
       overview: {
@@ -3350,6 +3537,8 @@
       document.getElementById("ordersTable").innerHTML =
         loadingMarkup();
 
+      await refreshDaysAndStops();
+
       state.orders = await api("/admin/orders");
 
       if (!Array.isArray(state.orders)) {
@@ -3714,7 +3903,9 @@
 
     const businessState = {
       stops: [],
-      lunchItems: []
+      lunchItems: [],
+      menuCategories: {},
+      menuOther: {}
     };
 
     const DELIVERY_DAYS = [
@@ -3737,45 +3928,36 @@
 
       container.innerHTML = businessState.stops
         .map((stop, index) => `
-          <div class="security-row" style="align-items:center; gap:10px;">
-            <select
-              onchange="updateStopField(${index}, 'day', this.value)"
-              style="padding:9px 10px; border-radius:var(--radius-sm); border:1px solid var(--border); font-family:inherit; font-size:13px; color:var(--text); background:#fff;"
-            >
+          <div class="stop-row">
+            <select onchange="updateStopField(${index}, 'day', this.value)">
               ${DELIVERY_DAYS.map((day) => `
                 <option value="${day}" ${stop.day === day ? "selected" : ""}>${day}</option>
               `).join("")}
             </select>
 
             <input
-              class="field"
               value="${escapeHtml(stop.location || "")}"
               placeholder="Location name"
               oninput="updateStopField(${index}, 'location', this.value)"
-              style="flex:1;"
             >
 
             <input
-              class="field"
               value="${escapeHtml(stop.time || "")}"
               placeholder="e.g. 11:30 AM"
               oninput="updateStopField(${index}, 'time', this.value)"
-              style="width:170px;"
             >
 
             <input
-              class="field"
               value="${escapeHtml(stop.address || "")}"
               placeholder="Address (optional)"
               oninput="updateStopField(${index}, 'address', this.value)"
-              style="width:170px;"
             >
 
             <button
               type="button"
+              class="row-delete-btn"
               onclick="removeStopRow(${index})"
               aria-label="Remove stop"
-              style="border:none; background:none; color:var(--red-600); cursor:pointer; font-size:16px; padding:6px;"
             >
               <i class="fa-solid fa-trash"></i>
             </button>
@@ -3818,19 +4000,17 @@
 
       container.innerHTML = businessState.lunchItems
         .map((item, index) => `
-          <div class="security-row" style="align-items:center; gap:10px;">
+          <div class="menu-item-row" style="grid-template-columns: 1fr 32px;">
             <input
-              class="field"
               value="${escapeHtml(item)}"
               oninput="updateLunchItem(${index}, this.value)"
-              style="flex:1;"
             >
 
             <button
               type="button"
+              class="row-delete-btn"
               onclick="removeLunchItem(${index})"
               aria-label="Remove item"
-              style="border:none; background:none; color:var(--red-600); cursor:pointer; font-size:16px; padding:6px;"
             >
               <i class="fa-solid fa-trash"></i>
             </button>
@@ -3865,13 +4045,109 @@
       renderLunchItems();
     }
 
+    function renderMenuCategories() {
+      const container = document.getElementById(
+        "menuCategoriesList"
+      );
+
+      const categoryNames = Object.keys(
+        businessState.menuCategories
+      );
+
+      if (categoryNames.length === 0) {
+        container.innerHTML =
+          `<p style="color:var(--muted); font-size:14px;">No menu categories found.</p>`;
+
+        return;
+      }
+
+      container.innerHTML = categoryNames
+        .map((categoryName) => {
+          const items =
+            businessState.menuCategories[
+              categoryName
+            ];
+
+          const rows = items
+            .map((item, index) => `
+              <div class="menu-item-row">
+                <input
+                  value="${escapeHtml(item.name || "")}"
+                  placeholder="Item name"
+                  oninput="updateMenuItemField('${escapeHtml(categoryName)}', ${index}, 'name', this.value)"
+                >
+
+                <input
+                  value="${escapeHtml(item.price || "")}"
+                  placeholder="$0.00"
+                  oninput="updateMenuItemField('${escapeHtml(categoryName)}', ${index}, 'price', this.value)"
+                >
+
+                <button
+                  type="button"
+                  class="row-delete-btn"
+                  onclick="removeMenuItem('${escapeHtml(categoryName)}', ${index})"
+                  aria-label="Remove item"
+                >
+                  <i class="fa-solid fa-trash"></i>
+                </button>
+              </div>
+            `)
+            .join("");
+
+          return `
+            <div class="menu-category-block">
+              <div class="menu-category-title">${escapeHtml(categoryName)}</div>
+
+              <div>${rows}</div>
+
+              <button
+                type="button"
+                class="btn"
+                type="button"
+                onclick="addMenuItem('${escapeHtml(categoryName)}')"
+                style="margin-top:4px;"
+              >
+                <i class="fa-solid fa-plus"></i>
+                Add item to ${escapeHtml(categoryName)}
+              </button>
+            </div>
+          `;
+        })
+        .join("");
+    }
+
+    function updateMenuItemField(
+      categoryName,
+      index,
+      field,
+      value
+    ) {
+      businessState.menuCategories[categoryName][
+        index
+      ][field] = value;
+    }
+
+    function addMenuItem(categoryName) {
+      businessState.menuCategories[
+        categoryName
+      ].push({ name: "", price: "" });
+
+      renderMenuCategories();
+    }
+
+    function removeMenuItem(categoryName, index) {
+      businessState.menuCategories[
+        categoryName
+      ].splice(index, 1);
+
+      renderMenuCategories();
+    }
+
     async function loadBusinessData() {
       const otherBox = document.getElementById(
         "otherDeliveryText"
       );
-
-      const menuBox =
-        document.getElementById("menuDataText");
 
       const message =
         document.getElementById("businessDataMessage");
@@ -3886,6 +4162,8 @@
         const delivery = JSON.parse(
           result.delivery
         );
+
+        const menu = JSON.parse(result.menu);
 
         businessState.stops = Array.isArray(
           delivery.deliveryStops
@@ -3909,10 +4187,15 @@
           2
         );
 
-        menuBox.value = result.menu;
+        businessState.menuCategories =
+          menu.categories || {};
+
+        businessState.menuOther = { ...menu };
+        delete businessState.menuOther.categories;
 
         renderStops();
         renderLunchItems();
+        renderMenuCategories();
       } catch (error) {
         message.innerHTML = errorBox(error.message);
       }
@@ -3922,9 +4205,6 @@
       const otherBox = document.getElementById(
         "otherDeliveryText"
       );
-
-      const menuBox =
-        document.getElementById("menuDataText");
 
       const message =
         document.getElementById("businessDataMessage");
@@ -3950,22 +4230,16 @@
         return;
       }
 
-      try {
-        JSON.parse(menuBox.value);
-      } catch (error) {
-        message.innerHTML = errorBox(
-          "Menu info is not valid JSON: " +
-            error.message
-        );
-
-        return;
-      }
-
       const mergedDelivery = {
         ...otherDelivery,
         deliveryStops: businessState.stops,
         lunchBoxIncludes:
           businessState.lunchItems
+      };
+
+      const mergedMenu = {
+        ...businessState.menuOther,
+        categories: businessState.menuCategories
       };
 
       setButtonLoading(button, true, "Saving");
@@ -3980,7 +4254,7 @@
               delivery: JSON.stringify(
                 mergedDelivery
               ),
-              menu: menuBox.value
+              menu: JSON.stringify(mergedMenu)
             })
           }
         );
@@ -3991,6 +4265,8 @@
         );
 
         toast("Delivery and menu data saved.");
+
+        await loadBusinessData();
       } catch (error) {
         message.innerHTML = errorBox(error.message);
       } finally {
@@ -4002,6 +4278,7 @@
         );
       }
     }
+
 
     async function loadDrivers() {
       document.getElementById("driversGrid").innerHTML =
@@ -4195,6 +4472,8 @@
     async function loadAssignments() {
       document.getElementById("assignmentBoard").innerHTML =
         loadingMarkup();
+
+      await refreshDaysAndStops();
 
       [state.drivers, state.assignments] = await Promise.all([
         api("/admin/drivers"),
@@ -4846,12 +5125,7 @@
     }
 
     function timeFor(stop) {
-      return {
-        "Gateway Village": "11:30 AM",
-        "Discovery Place": "11:45 AM",
-        "Ally Center": "12:00 PM",
-        "One Wells Fargo": "12:30 PM"
-      }[stop] || "";
+      return stopTimesMap[stop] || "";
     }
 
     function assignmentId(day, stop) {

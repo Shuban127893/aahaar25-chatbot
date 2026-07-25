@@ -22,63 +22,85 @@ function createWhatsAppRouter({
 
   const userSessions = {};
 
-  function normalizeDay(text = "") {
-    const lower = text.toLowerCase();
+  const CANONICAL_DAY_ORDER = [
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+    "Monday",
+  ];
 
-    if (
-      lower.includes("tuesday") ||
-      lower === "tue"
-    ) {
-      return "Tuesday";
-    }
+  function getDaysWithStops() {
+    const stops =
+      getDeliveryInfo()?.deliveryStops || [];
 
-    if (
-      lower.includes("wednesday") ||
-      lower === "wed"
-    ) {
-      return "Wednesday";
-    }
+    const uniqueDays = [
+      ...new Set(
+        stops
+          .map((stop) => stop.day)
+          .filter(Boolean)
+      ),
+    ];
 
-    if (
-      lower.includes("thursday") ||
-      lower === "thu"
-    ) {
-      return "Thursday";
-    }
+    uniqueDays.sort(
+      (a, b) =>
+        CANONICAL_DAY_ORDER.indexOf(a) -
+        CANONICAL_DAY_ORDER.indexOf(b)
+    );
 
-    if (
-      lower.includes("friday") ||
-      lower === "fri"
-    ) {
-      return "Friday";
-    }
-
-    return null;
+    return uniqueDays;
   }
 
-  function normalizeStop(text = "") {
+  function getStopsForDay(day) {
+    const stops =
+      getDeliveryInfo()?.deliveryStops || [];
+
+    return stops.filter(
+      (stop) => stop.day === day
+    );
+  }
+
+  function normalizeDay(text = "") {
     const lower = text.toLowerCase();
+    const days = getDaysWithStops();
 
-    if (lower.includes("gateway")) {
-      return "Gateway Village";
+    return (
+      days.find((day) =>
+        lower.includes(day.toLowerCase())
+      ) || null
+    );
+  }
+
+  function normalizeStop(text = "", day) {
+    const lower = text.toLowerCase();
+    const stops = getStopsForDay(day);
+
+    const exact = stops.find((stop) =>
+      lower.includes(
+        stop.location.toLowerCase()
+      )
+    );
+
+    if (exact) {
+      return exact.location;
     }
 
-    if (lower.includes("discovery")) {
-      return "Discovery Place";
-    }
+    // Fall back to a loose word-overlap match,
+    // so "gateway" still matches "Gateway Village".
+    const loose = stops.find((stop) => {
+      const words = stop.location
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((word) => word.length > 3);
 
-    if (lower.includes("ally")) {
-      return "Ally Center";
-    }
+      return words.some((word) =>
+        lower.includes(word)
+      );
+    });
 
-    if (
-      lower.includes("wells") ||
-      lower.includes("fargo")
-    ) {
-      return "One Wells Fargo";
-    }
-
-    return null;
+    return loose ? loose.location : null;
   }
 
   function isQuestion(text = "") {
@@ -207,14 +229,40 @@ function createWhatsAppRouter({
         lower.includes("spot") ||
         lower.includes("location")
       ) {
+        const stops =
+          getDeliveryInfo()?.deliveryStops ||
+          [];
+
+        const days = getDaysWithStops();
+
+        const stopLines = days
+          .map((day) => {
+            const dayStops = stops.filter(
+              (s) => s.day === day
+            );
+
+            if (dayStops.length === 0) {
+              return "";
+            }
+
+            return (
+              `${day}:\n` +
+              dayStops
+                .map(
+                  (s) =>
+                    `• ${s.location} — ${s.time}`
+                )
+                .join("\n")
+            );
+          })
+          .filter(Boolean)
+          .join("\n\n");
+
         await sendWhatsAppMessage(
           from,
-          "AAHAAR25 Uptown delivery stops are:\n\n" +
-            "• Gateway Village — 11:30 AM\n" +
-            "• Discovery Place — 11:45 AM\n" +
-            "• Ally Center — 12:00 PM\n" +
-            "• One Wells Fargo — 12:30 PM\n\n" +
-            "Delivery is available Tuesday through Friday."
+          stopLines
+            ? `AAHAAR25 Uptown delivery stops:\n\n${stopLines}`
+            : "Delivery stop information isn't available right now. Please call us for details."
         );
 
         await sendMainMenu(from);
@@ -236,7 +284,10 @@ function createWhatsAppRouter({
           },
         };
 
-        await sendDayList(from);
+        await sendDayList(
+          from,
+          getDaysWithStops()
+        );
 
         return res.sendStatus(200);
       }
@@ -252,15 +303,26 @@ function createWhatsAppRouter({
           day = normalizeDay(userText);
         }
 
-        if (!day) {
-          await sendDayList(from);
+        if (
+          !day ||
+          !getDaysWithStops().includes(day)
+        ) {
+          await sendDayList(
+            from,
+            getDaysWithStops()
+          );
+
           return res.sendStatus(200);
         }
 
         session.order.day = day;
         session.step = "ask_stop";
 
-        await sendStopList(from, day);
+        await sendStopList(
+          from,
+          day,
+          getStopsForDay(day)
+        );
 
         return res.sendStatus(200);
       }
@@ -271,13 +333,23 @@ function createWhatsAppRouter({
         if (userText.startsWith("STOP_")) {
           stop = userText.replace("STOP_", "");
         } else {
-          stop = normalizeStop(userText);
+          stop = normalizeStop(
+            userText,
+            session.order.day
+          );
         }
 
-        if (!stop) {
+        const validStop = getStopsForDay(
+          session.order.day
+        ).some(
+          (s) => s.location === stop
+        );
+
+        if (!stop || !validStop) {
           await sendStopList(
             from,
-            session.order.day
+            session.order.day,
+            getStopsForDay(session.order.day)
           );
 
           return res.sendStatus(200);

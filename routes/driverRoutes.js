@@ -20,6 +20,7 @@ function createDriverRouter({
   setCookie,
   clearCookie,
   sendWhatsAppMessage,
+  getDeliveryInfo,
 }) {
   const router = express.Router();
 
@@ -62,19 +63,20 @@ function createDriverRouter({
       },
     });
 
-  const stopTimes = {
-    "Gateway Village":
-      "11:30 AM",
+  function getStopTimes() {
+    const stops =
+      getDeliveryInfo()?.deliveryStops || [];
 
-    "Discovery Place":
-      "11:45 AM",
+    const map = {};
 
-    "Ally Center":
-      "12:00 PM",
+    for (const stop of stops) {
+      if (stop.location) {
+        map[stop.location] = stop.time || "";
+      }
+    }
 
-    "One Wells Fargo":
-      "12:30 PM",
-  };
+    return map;
+  }
 
   function normalizeStop(
     value = ""
@@ -83,32 +85,44 @@ function createDriverRouter({
       .trim()
       .toLowerCase();
 
-    if (
-      lower.includes("gateway")
-    ) {
-      return "Gateway Village";
+    const stops =
+      getDeliveryInfo()?.deliveryStops || [];
+
+    const locations = [
+      ...new Set(
+        stops
+          .map((s) => s.location)
+          .filter(Boolean)
+      ),
+    ];
+
+    const exact = locations.find(
+      (location) =>
+        lower.includes(
+          location.toLowerCase()
+        )
+    );
+
+    if (exact) {
+      return exact;
     }
 
-    if (
-      lower.includes("discovery")
-    ) {
-      return "Discovery Place";
-    }
+    const loose = locations.find(
+      (location) => {
+        const words = location
+          .toLowerCase()
+          .split(/\s+/)
+          .filter(
+            (word) => word.length > 3
+          );
 
-    if (
-      lower.includes("ally")
-    ) {
-      return "Ally Center";
-    }
+        return words.some((word) =>
+          lower.includes(word)
+        );
+      }
+    );
 
-    if (
-      lower.includes("wells") ||
-      lower.includes("fargo")
-    ) {
-      return "One Wells Fargo";
-    }
-
-    return null;
+    return loose || null;
   }
 
   function normalizeDay(
@@ -781,16 +795,21 @@ function createDriverRouter({
           day,
 
           assignments:
-            assignments.rows.map(
-              (assignment) => ({
-                ...assignment,
+            (() => {
+              const stopTimes =
+                getStopTimes();
 
-                time:
-                  stopTimes[
-                    assignment.stop
-                  ] || "",
-              })
-            ),
+              return assignments.rows.map(
+                (assignment) => ({
+                  ...assignment,
+
+                  time:
+                    stopTimes[
+                      assignment.stop
+                    ] || "",
+                })
+              );
+            })(),
         });
       } catch (error) {
         console.error(

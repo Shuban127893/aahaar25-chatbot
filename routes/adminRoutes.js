@@ -1,6 +1,178 @@
 const express = require("express");
 const crypto = require("crypto");
+const fs = require("fs");
 const rateLimit = require("express-rate-limit");
+
+/*
+Basic schema checks for the delivery and
+menu data an admin edits by hand.
+
+These catch the mistakes a typo is likely
+to cause (a blank stop name, a price that
+isn't really a price) without being so
+strict that a legitimate edit gets rejected.
+*/
+
+const TIME_PATTERN =
+  /\d{1,2}(:\d{2})?\s*(AM|PM)/i;
+
+const PRICE_PATTERN =
+  /^\$\d+(\.\d{2})?$/;
+
+function validateDeliveryInfo(data) {
+  if (
+    !data ||
+    typeof data !== "object"
+  ) {
+    return "Delivery info must be a JSON object.";
+  }
+
+  if (
+    !String(
+      data.phone || ""
+    ).trim()
+  ) {
+    return "Delivery info is missing a phone number.";
+  }
+
+  if (
+    !String(
+      data.unsupportedLocationResponse || ""
+    ).trim()
+  ) {
+    return "Delivery info is missing the unsupportedLocationResponse message.";
+  }
+
+  if (
+    !Array.isArray(
+      data.deliveryStops
+    )
+  ) {
+    return "deliveryStops must be a list.";
+  }
+
+  for (
+    let i = 0;
+    i < data.deliveryStops.length;
+    i++
+  ) {
+    const stop =
+      data.deliveryStops[i];
+
+    if (
+      !stop ||
+      typeof stop !== "object"
+    ) {
+      return `deliveryStops[${i}] must be an object.`;
+    }
+
+    if (
+      !String(
+        stop.day || ""
+      ).trim()
+    ) {
+      return `deliveryStops[${i}] is missing a day.`;
+    }
+
+    if (
+      !String(
+        stop.location || ""
+      ).trim()
+    ) {
+      return `deliveryStops[${i}] is missing a location name.`;
+    }
+
+    if (
+      !String(
+        stop.time || ""
+      ).trim()
+    ) {
+      return `deliveryStops[${i}] (${stop.location}) is missing a time.`;
+    }
+
+    if (
+      !TIME_PATTERN.test(
+        String(stop.time)
+      )
+    ) {
+      return `deliveryStops[${i}] (${stop.location}) has a time that doesn't look valid: "${stop.time}". Use a format like "11:30 AM" or "12:00 PM - 12:15 PM".`;
+    }
+  }
+
+  return null;
+}
+
+function validateMenuInfo(data) {
+  if (
+    !data ||
+    typeof data !== "object"
+  ) {
+    return "Menu info must be a JSON object.";
+  }
+
+  if (
+    !data.categories ||
+    typeof data.categories !== "object"
+  ) {
+    return "Menu info must have a categories object.";
+  }
+
+  const categoryNames = Object.keys(
+    data.categories
+  );
+
+  for (
+    const categoryName of categoryNames
+  ) {
+    const items =
+      data.categories[categoryName];
+
+    if (!Array.isArray(items)) {
+      return `Category "${categoryName}" must be a list of items.`;
+    }
+
+    for (
+      let i = 0;
+      i < items.length;
+      i++
+    ) {
+      const item = items[i];
+
+      if (
+        !item ||
+        typeof item !== "object"
+      ) {
+        return `${categoryName}[${i}] must be an object.`;
+      }
+
+      if (
+        !String(
+          item.name || ""
+        ).trim()
+      ) {
+        return `${categoryName}[${i}] is missing a name.`;
+      }
+
+      if (
+        !String(
+          item.price || ""
+        ).trim()
+      ) {
+        return `"${item.name}" in ${categoryName} is missing a price.`;
+      }
+
+      if (
+        !PRICE_PATTERN.test(
+          String(item.price).trim()
+        )
+      ) {
+        return `"${item.name}" in ${categoryName} has an invalid price: "${item.price}". Use a format like "$9.99".`;
+      }
+    }
+  }
+
+  return null;
+}
 
 const {
   normalizePhone,
@@ -22,6 +194,10 @@ function createAdminRouter({
   setCookie,
   clearCookie,
   sendWhatsAppMessage,
+  DELIVERY_INFO_PATH,
+  MENU_INFO_PATH,
+  reloadBusinessData,
+  getDeliveryInfo,
 }) {
   const router = express.Router();
 
@@ -1369,18 +1545,23 @@ function createAdminRouter({
     requireAdmin,
     async (req, res) => {
       try {
+        const deliveryStops =
+          getDeliveryInfo()?.deliveryStops || [];
+
         const allowedDays = [
-          "Tuesday",
-          "Wednesday",
-          "Thursday",
-          "Friday",
+          ...new Set(
+            deliveryStops
+              .map((s) => s.day)
+              .filter(Boolean)
+          ),
         ];
 
         const allowedStops = [
-          "Gateway Village",
-          "Discovery Place",
-          "Ally Center",
-          "One Wells Fargo",
+          ...new Set(
+            deliveryStops
+              .map((s) => s.location)
+              .filter(Boolean)
+          ),
         ];
 
         const day = String(
@@ -1550,6 +1731,171 @@ function createAdminRouter({
 
           error:
             "Could not save assignment",
+        });
+      }
+    }
+  );
+
+  /*
+  Load the raw delivery and menu JSON
+  so the admin can edit them directly.
+  */
+
+  router.get(
+    "/admin/business-data",
+    requireAdmin,
+    async (req, res) => {
+      try {
+        const deliveryText =
+          fs.readFileSync(
+            DELIVERY_INFO_PATH,
+            "utf8"
+          );
+
+        const menuText =
+          fs.readFileSync(
+            MENU_INFO_PATH,
+            "utf8"
+          );
+
+        return res.json({
+          success: true,
+          delivery: deliveryText,
+          menu: menuText,
+        });
+      } catch (error) {
+        console.error(
+          "Load business data error:",
+          error.message
+        );
+
+        return res.status(500).json({
+          success: false,
+
+          error:
+            "Could not load the delivery and menu data.",
+        });
+      }
+    }
+  );
+
+  /*
+  Save edited delivery and menu JSON.
+
+  Both are validated as real JSON before
+  anything is written to disk, so a typo
+  can never break the live chatbot.
+
+  The in-memory copies used by the chatbot
+  are reloaded immediately, so changes take
+  effect without a redeploy.
+  */
+
+  router.post(
+    "/admin/business-data",
+    requireAdmin,
+    async (req, res) => {
+      try {
+        const deliveryText = String(
+          req.body.delivery || ""
+        );
+
+        const menuText = String(
+          req.body.menu || ""
+        );
+
+        let parsedDelivery;
+        let parsedMenu;
+
+        try {
+          parsedDelivery = JSON.parse(
+            deliveryText
+          );
+        } catch (error) {
+          return res.status(400).json({
+            success: false,
+
+            error:
+              "Delivery info is not valid JSON: " +
+              error.message,
+          });
+        }
+
+        try {
+          parsedMenu = JSON.parse(
+            menuText
+          );
+        } catch (error) {
+          return res.status(400).json({
+            success: false,
+
+            error:
+              "Menu info is not valid JSON: " +
+              error.message,
+          });
+        }
+
+        const deliveryValidationError =
+          validateDeliveryInfo(
+            parsedDelivery
+          );
+
+        if (deliveryValidationError) {
+          return res.status(400).json({
+            success: false,
+            error: deliveryValidationError,
+          });
+        }
+
+        const menuValidationError =
+          validateMenuInfo(
+            parsedMenu
+          );
+
+        if (menuValidationError) {
+          return res.status(400).json({
+            success: false,
+            error: menuValidationError,
+          });
+        }
+
+        fs.writeFileSync(
+          DELIVERY_INFO_PATH,
+          JSON.stringify(
+            parsedDelivery,
+            null,
+            2
+          )
+        );
+
+        fs.writeFileSync(
+          MENU_INFO_PATH,
+          JSON.stringify(
+            parsedMenu,
+            null,
+            2
+          )
+        );
+
+        reloadBusinessData();
+
+        return res.json({
+          success: true,
+
+          message:
+            "Delivery and menu data saved. The chatbot is now using the updated information.",
+        });
+      } catch (error) {
+        console.error(
+          "Save business data error:",
+          error.message
+        );
+
+        return res.status(500).json({
+          success: false,
+
+          error:
+            "Could not save the delivery and menu data.",
         });
       }
     }

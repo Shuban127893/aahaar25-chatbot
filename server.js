@@ -447,6 +447,7 @@ app.use(
     DELIVERY_INFO_PATH,
     MENU_INFO_PATH,
     reloadBusinessData,
+    getDeliveryInfo: () => deliveryInfo,
   })
 );
 
@@ -462,6 +463,7 @@ app.use(
     setCookie,
     clearCookie,
     sendWhatsAppMessage,
+    getDeliveryInfo: () => deliveryInfo,
   })
 );
 

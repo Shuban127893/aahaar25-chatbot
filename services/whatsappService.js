@@ -132,7 +132,17 @@ async function sendMainMenu(to) {
   });
 }
 
-async function sendDayList(to) {
+async function sendDayList(to, days) {
+  const dayList =
+    Array.isArray(days) && days.length > 0
+      ? days
+      : [
+          "Tuesday",
+          "Wednesday",
+          "Thursday",
+          "Friday",
+        ];
+
   return sendWhatsAppPayload({
     messaging_product: "whatsapp",
     to,
@@ -150,39 +160,22 @@ async function sendDayList(to) {
           "Please choose your delivery day.",
       },
       footer: {
-        text: "Available Tuesday–Friday",
+        text: `Available ${dayList[0]}–${
+          dayList[dayList.length - 1]
+        }`,
       },
       action: {
         button: "Choose Day",
         sections: [
           {
             title: "Delivery Days",
-            rows: [
-              {
-                id: "DAY_Tuesday",
-                title: "Tuesday",
-                description:
-                  "Order for Tuesday delivery",
-              },
-              {
-                id: "DAY_Wednesday",
-                title: "Wednesday",
-                description:
-                  "Order for Wednesday delivery",
-              },
-              {
-                id: "DAY_Thursday",
-                title: "Thursday",
-                description:
-                  "Order for Thursday delivery",
-              },
-              {
-                id: "DAY_Friday",
-                title: "Friday",
-                description:
-                  "Order for Friday delivery",
-              },
-            ],
+            rows: dayList
+              .slice(0, 10)
+              .map((day) => ({
+                id: `DAY_${day}`,
+                title: day,
+                description: `Order for ${day} delivery`,
+              })),
           },
         ],
       },
@@ -190,7 +183,12 @@ async function sendDayList(to) {
   });
 }
 
-async function sendStopList(to, day) {
+async function sendStopList(to, day, stops) {
+  const stopList =
+    Array.isArray(stops) && stops.length > 0
+      ? stops
+      : [];
+
   return sendWhatsAppPayload({
     messaging_product: "whatsapp",
     to,
@@ -215,28 +213,16 @@ async function sendStopList(to, day) {
         sections: [
           {
             title: "Uptown Stops",
-            rows: [
-              {
-                id: "STOP_Gateway Village",
-                title: "Gateway Village",
-                description: "11:30 AM",
-              },
-              {
-                id: "STOP_Discovery Place",
-                title: "Discovery Place",
-                description: "11:45 AM",
-              },
-              {
-                id: "STOP_Ally Center",
-                title: "Ally Center",
-                description: "12:00 PM",
-              },
-              {
-                id: "STOP_One Wells Fargo",
-                title: "One Wells Fargo",
-                description: "12:30 PM",
-              },
-            ],
+            rows: stopList
+              .slice(0, 10)
+              .map((stop) => ({
+                id: `STOP_${stop.location}`,
+                title: stop.location.slice(
+                  0,
+                  24
+                ),
+                description: stop.time || "",
+              })),
           },
         ],
       },
