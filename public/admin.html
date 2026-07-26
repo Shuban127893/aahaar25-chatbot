@@ -3026,6 +3026,8 @@
       "One Wells Fargo": "12:30 PM"
     };
 
+    let stopsByDay = {};
+
     async function refreshDaysAndStops() {
       try {
         const result = await api(
@@ -3083,6 +3085,32 @@
 
         if (Object.keys(timesMap).length > 0) {
           stopTimesMap = timesMap;
+        }
+
+        const byDay = {};
+
+        for (const stop of stops) {
+          if (!stop.day || !stop.location) {
+            continue;
+          }
+
+          if (!byDay[stop.day]) {
+            byDay[stop.day] = [];
+          }
+
+          if (
+            !byDay[stop.day].includes(
+              stop.location
+            )
+          ) {
+            byDay[stop.day].push(
+              stop.location
+            );
+          }
+        }
+
+        if (Object.keys(byDay).length > 0) {
+          stopsByDay = byDay;
         }
 
         populateOrderFilterOptions();
@@ -4499,19 +4527,22 @@
     }
 
     function assignmentDayCard(day) {
+      const dayStops =
+        stopsByDay[day] || [];
+
       return `
         <article class="assignment-day">
           <div class="assignment-day-header">
             <div>
               <h3>${escapeHtml(day)}</h3>
-              <span>Four Uptown delivery stops</span>
+              <span>${dayStops.length} Uptown delivery ${dayStops.length === 1 ? "stop" : "stops"}</span>
             </div>
 
             <i class="fa-regular fa-calendar-check"></i>
           </div>
 
           <div class="assignment-list">
-            ${STOPS.map((stop) => {
+            ${dayStops.map((stop) => {
               const assignment = state.assignments.find(
                 (item) =>
                   item.day === day &&
@@ -4650,7 +4681,10 @@
       let rotation = state.shuffleCount;
 
       targetDays.forEach((day, dayIndex) => {
-        shuffled(STOPS).forEach((stop, stopIndex) => {
+        const dayStops =
+          stopsByDay[day] || [];
+
+        shuffled(dayStops).forEach((stop, stopIndex) => {
           preview.push({
             day,
             stop,
@@ -4666,7 +4700,7 @@
           });
         });
 
-        rotation += STOPS.length;
+        rotation += dayStops.length;
       });
 
       return preview;
@@ -4741,7 +4775,7 @@
         return;
       }
 
-      STOPS.forEach((stop) => {
+      (stopsByDay[day] || []).forEach((stop) => {
         const select =
           document.getElementById(
             assignmentId(day, stop)
@@ -4783,7 +4817,7 @@
         day;
 
       document.getElementById("summaryAssignedStops").textContent =
-        `${assigned} of ${STOPS.length}`;
+        `${assigned} of ${(stopsByDay[day] || []).length}`;
 
       document.getElementById("summaryUnsavedChanges").textContent =
         unsaved;

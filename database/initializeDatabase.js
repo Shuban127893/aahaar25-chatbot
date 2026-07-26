@@ -337,6 +337,31 @@ async function initializeDatabase() {
 
   /*
   ============================================================
+  BUSINESS DATA
+
+  Stores the live delivery and menu data an
+  admin edits through the dashboard.
+
+  Railway rebuilds this app's filesystem from
+  git on every deploy, so anything written only
+  to delivery-info.json / menu-info.json would
+  be silently lost on the next deploy. This
+  table is the real, persistent source of truth;
+  the JSON files remain only as the first-boot
+  starting values.
+  ============================================================
+  */
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS business_data (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  /*
+  ============================================================
   CLEANUP EXPIRED AUTHENTICATION RECORDS
   ============================================================
   */

@@ -1,6 +1,5 @@
 const express = require("express");
 const crypto = require("crypto");
-const fs = require("fs");
 const rateLimit = require("express-rate-limit");
 
 /*
@@ -194,16 +193,28 @@ function createAdminRouter({
   setCookie,
   clearCookie,
   sendWhatsAppMessage,
-  DELIVERY_INFO_PATH,
-  MENU_INFO_PATH,
-  reloadBusinessData,
   getDeliveryInfo,
+  getMenuInfo,
+  saveBusinessDataToDb,
 }) {
   const router = express.Router();
 
+  /*
+  ADMIN_PASSWORD is for logging into the
+  dashboard as a human.
+
+  ADMIN_API_KEY (used in adminAuth.js via
+  the x-admin-key header) is a separate,
+  non-expiring credential meant only for
+  server-to-server or programmatic access.
+
+  These are kept intentionally distinct:
+  a leaked API key should never also work
+  as a human login, and vice versa.
+  */
+
   const ADMIN_PASSWORD =
-    process.env.ADMIN_PASSWORD ||
-    process.env.ADMIN_API_KEY;
+    process.env.ADMIN_PASSWORD;
 
   const adminLoginLimiter =
     rateLimit({
@@ -1746,22 +1757,16 @@ function createAdminRouter({
     requireAdmin,
     async (req, res) => {
       try {
-        const deliveryText =
-          fs.readFileSync(
-            DELIVERY_INFO_PATH,
-            "utf8"
-          );
-
-        const menuText =
-          fs.readFileSync(
-            MENU_INFO_PATH,
-            "utf8"
-          );
-
         return res.json({
           success: true,
-          delivery: deliveryText,
-          menu: menuText,
+
+          delivery: JSON.stringify(
+            getDeliveryInfo()
+          ),
+
+          menu: JSON.stringify(
+            getMenuInfo()
+          ),
         });
       } catch (error) {
         console.error(
@@ -1783,12 +1788,16 @@ function createAdminRouter({
   Save edited delivery and menu JSON.
 
   Both are validated as real JSON before
-  anything is written to disk, so a typo
-  can never break the live chatbot.
+  anything is saved, so a typo can never
+  break the live chatbot.
 
-  The in-memory copies used by the chatbot
-  are reloaded immediately, so changes take
-  effect without a redeploy.
+  Saved to the database (not just the
+  filesystem), since Railway rebuilds this
+  app's files from git on every deploy -
+  a file-only save would be lost on the
+  next deploy. The in-memory copies used
+  by the chatbot are updated immediately,
+  so changes take effect without a redeploy.
   */
 
   router.post(
@@ -1859,25 +1868,10 @@ function createAdminRouter({
           });
         }
 
-        fs.writeFileSync(
-          DELIVERY_INFO_PATH,
-          JSON.stringify(
-            parsedDelivery,
-            null,
-            2
-          )
+        await saveBusinessDataToDb(
+          parsedDelivery,
+          parsedMenu
         );
-
-        fs.writeFileSync(
-          MENU_INFO_PATH,
-          JSON.stringify(
-            parsedMenu,
-            null,
-            2
-          )
-        );
-
-        reloadBusinessData();
 
         return res.json({
           success: true,

@@ -86,11 +86,63 @@ General security middleware
 
 app.use(
   helmet({
-    contentSecurityPolicy: false,
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: [
+          "'self'",
+          "'unsafe-inline'",
+        ],
+        styleSrc: [
+          "'self'",
+          "'unsafe-inline'",
+        ],
+        imgSrc: ["'self'", "data:"],
+        connectSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+      },
+    },
   })
 );
 
-app.use(cors());
+/*
+Only these origins may call the API
+from a browser. Server-to-server calls
+(WhatsApp, Square webhooks) don't send
+an Origin header and are unaffected.
+
+Add more origins with a comma-separated
+ALLOWED_ORIGINS env var if this app is
+ever embedded elsewhere.
+*/
+
+const ALLOWED_ORIGINS = (
+  process.env.ALLOWED_ORIGINS ||
+  "https://www.aahaar25.com,https://aahaar25.com"
+)
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (
+        !origin ||
+        ALLOWED_ORIGINS.includes(origin)
+      ) {
+        return callback(null, true);
+      }
+
+      return callback(
+        new Error("Not allowed by CORS")
+      );
+    },
+  })
+);
 
 app.use(
   express.json({
@@ -145,10 +197,15 @@ const client =
 /*
 Business data the chatbot is allowed to use.
 
-Loaded at startup, and reloadable at runtime
-whenever an admin saves an edit through the
-"Menu & delivery" admin tab, so the chatbot
-never needs a redeploy to pick up a change.
+The database is the real, persistent source
+of truth, because Railway rebuilds this app's
+filesystem from git on every deploy - anything
+saved only to the JSON files would be lost the
+next time this app is deployed.
+
+delivery-info.json / menu-info.json are used
+only once, to seed the database the very first
+time this app ever starts with no saved data.
 */
 
 const DELIVERY_INFO_PATH = path.join(
@@ -175,20 +232,71 @@ let menuInfo = JSON.parse(
   )
 );
 
-function reloadBusinessData() {
-  deliveryInfo = JSON.parse(
-    fs.readFileSync(
-      DELIVERY_INFO_PATH,
-      "utf8"
-    )
+async function loadBusinessDataFromDb() {
+  const result = await pool.query(
+    `SELECT key, value FROM business_data
+     WHERE key IN ('delivery_info', 'menu_info');`
   );
 
-  menuInfo = JSON.parse(
-    fs.readFileSync(
-      MENU_INFO_PATH,
-      "utf8"
-    )
+  const rows = {};
+
+  for (const row of result.rows) {
+    rows[row.key] = row.value;
+  }
+
+  if (rows.delivery_info) {
+    deliveryInfo = JSON.parse(
+      rows.delivery_info
+    );
+  } else {
+    // First-ever boot: seed the database
+    // from the JSON file that shipped in git.
+    await pool.query(
+      `INSERT INTO business_data (key, value)
+       VALUES ('delivery_info', $1)
+       ON CONFLICT (key) DO NOTHING;`,
+      [JSON.stringify(deliveryInfo)]
+    );
+  }
+
+  if (rows.menu_info) {
+    menuInfo = JSON.parse(rows.menu_info);
+  } else {
+    await pool.query(
+      `INSERT INTO business_data (key, value)
+       VALUES ('menu_info', $1)
+       ON CONFLICT (key) DO NOTHING;`,
+      [JSON.stringify(menuInfo)]
+    );
+  }
+}
+
+async function reloadBusinessData() {
+  await loadBusinessDataFromDb();
+}
+
+async function saveBusinessDataToDb(
+  newDeliveryInfo,
+  newMenuInfo
+) {
+  await pool.query(
+    `INSERT INTO business_data (key, value, updated_at)
+     VALUES ('delivery_info', $1, NOW())
+     ON CONFLICT (key)
+     DO UPDATE SET value = $1, updated_at = NOW();`,
+    [JSON.stringify(newDeliveryInfo)]
   );
+
+  await pool.query(
+    `INSERT INTO business_data (key, value, updated_at)
+     VALUES ('menu_info', $1, NOW())
+     ON CONFLICT (key)
+     DO UPDATE SET value = $1, updated_at = NOW();`,
+    [JSON.stringify(newMenuInfo)]
+  );
+
+  deliveryInfo = newDeliveryInfo;
+  menuInfo = newMenuInfo;
 }
 
 function buildSystemPrompt() {
@@ -350,8 +458,25 @@ This remains in server.js for now.
 It can later move into chatRoutes.js.
 */
 
+const chatLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+
+  max: 20,
+
+  standardHeaders: true,
+  legacyHeaders: false,
+
+  message: {
+    success: false,
+
+    error:
+      "Too many messages. Please wait a few minutes and try again.",
+  },
+});
+
 app.post(
   "/chat",
+  chatLimiter,
   async (req, res) => {
     try {
       const userMessage =
@@ -444,10 +569,9 @@ app.use(
     setCookie,
     clearCookie,
     sendWhatsAppMessage,
-    DELIVERY_INFO_PATH,
-    MENU_INFO_PATH,
-    reloadBusinessData,
     getDeliveryInfo: () => deliveryInfo,
+    getMenuInfo: () => menuInfo,
+    saveBusinessDataToDb,
   })
 );
 
@@ -484,6 +608,9 @@ Initialize database and start server
 */
 
 initializeDatabase()
+  .then(() =>
+    loadBusinessDataFromDb()
+  )
   .then(() => {
     app.listen(
       PORT,
