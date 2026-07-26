@@ -372,6 +372,21 @@ async function initializeDatabase() {
 
   /*
   ============================================================
+  WHATSAPP SESSIONS
+  ============================================================
+  */
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS whatsapp_sessions (
+      phone TEXT PRIMARY KEY,
+      step TEXT NOT NULL,
+      order_data JSONB NOT NULL DEFAULT '{}',
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  /*
+  ============================================================
   CLEANUP EXPIRED AUTHENTICATION RECORDS
   ============================================================
   */
@@ -390,6 +405,11 @@ async function initializeDatabase() {
     DELETE FROM driver_login_codes
     WHERE expires_at <= NOW()
        OR used_at IS NOT NULL;
+  `);
+
+  await pool.query(`
+    DELETE FROM whatsapp_sessions
+    WHERE updated_at <= NOW() - INTERVAL '2 hours';
   `);
 }
 

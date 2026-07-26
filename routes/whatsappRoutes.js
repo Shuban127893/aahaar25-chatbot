@@ -25,7 +25,57 @@ function createWhatsAppRouter({
   const WHATSAPP_VERIFY_TOKEN =
     process.env.WHATSAPP_VERIFY_TOKEN;
 
-  const userSessions = {};
+  /*
+  Order-flow session state (which step a
+  customer is on, and what they've picked
+  so far) is stored in the database, not in
+  memory. A plain in-memory object would be
+  wiped every time this app redeploys or
+  restarts, silently dropping any customer
+  who happens to be mid-order at that moment.
+  */
+
+  async function getSession(phone) {
+    const result = await pool.query(
+      `SELECT step, order_data
+       FROM whatsapp_sessions
+       WHERE phone = $1`,
+      [phone]
+    );
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    return {
+      step: result.rows[0].step,
+      order: result.rows[0].order_data || {},
+    };
+  }
+
+  async function setSession(
+    phone,
+    step,
+    order
+  ) {
+    await pool.query(
+      `INSERT INTO whatsapp_sessions (phone, step, order_data, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (phone)
+       DO UPDATE SET
+         step = $2,
+         order_data = $3,
+         updated_at = NOW()`,
+      [phone, step, JSON.stringify(order)]
+    );
+  }
+
+  async function clearSession(phone) {
+    await pool.query(
+      `DELETE FROM whatsapp_sessions WHERE phone = $1`,
+      [phone]
+    );
+  }
 
   const CANONICAL_DAY_ORDER = [
     "Tuesday",
@@ -199,10 +249,10 @@ function createWhatsAppRouter({
         userText
       );
 
-      let session = userSessions[from];
+      let session = await getSession(from);
 
       if (lower === "cancel") {
-        delete userSessions[from];
+        await clearSession(from);
 
         await sendWhatsAppMessage(
           from,
@@ -290,13 +340,10 @@ function createWhatsAppRouter({
           (lower.includes("order") ||
             lower.includes("lunch box")))
       ) {
-        userSessions[from] = {
-          step: "ask_day",
-          order: {
-            phone: from,
-            status: "pending",
-          },
-        };
+        await setSession(from, "ask_day", {
+          phone: from,
+          status: "pending",
+        });
 
         await sendDayList(
           from,
@@ -305,8 +352,6 @@ function createWhatsAppRouter({
 
         return res.sendStatus(200);
       }
-
-      session = userSessions[from];
 
       if (session?.step === "ask_day") {
         let day = null;
@@ -329,8 +374,10 @@ function createWhatsAppRouter({
           return res.sendStatus(200);
         }
 
-        session.order.day = day;
-        session.step = "ask_stop";
+        await setSession(from, "ask_stop", {
+          ...session.order,
+          day,
+        });
 
         await sendStopList(
           from,
@@ -369,8 +416,10 @@ function createWhatsAppRouter({
           return res.sendStatus(200);
         }
 
-        session.order.stop = stop;
-        session.step = "ask_name";
+        await setSession(from, "ask_name", {
+          ...session.order,
+          stop,
+        });
 
         await sendWhatsAppMessage(
           from,
@@ -454,7 +503,7 @@ function createWhatsAppRouter({
 
         const order = inserted.rows[0];
 
-        delete userSessions[from];
+        await clearSession(from);
 
         const lunchBoxIncludes =
           getDeliveryInfo()
