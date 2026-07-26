@@ -4497,11 +4497,20 @@
       }
     }
 
+    let todayDayName = null;
+
     async function loadAssignments() {
       document.getElementById("assignmentBoard").innerHTML =
         loadingMarkup();
 
       await refreshDaysAndStops();
+
+      try {
+        const today = await api("/admin/today");
+        todayDayName = today.dayName;
+      } catch (error) {
+        todayDayName = null;
+      }
 
       [state.drivers, state.assignments] = await Promise.all([
         api("/admin/drivers"),
@@ -4530,11 +4539,14 @@
       const dayStops =
         stopsByDay[day] || [];
 
+      const isToday =
+        day === todayDayName;
+
       return `
-        <article class="assignment-day">
+        <article class="assignment-day" ${isToday ? 'style="border: 2px solid var(--orange-500);"' : ""}>
           <div class="assignment-day-header">
             <div>
-              <h3>${escapeHtml(day)}</h3>
+              <h3>${escapeHtml(day)} ${isToday ? '<span style="background: var(--orange-500); color: #fff; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; margin-left: 6px; vertical-align: middle;">TODAY</span>' : ""}</h3>
               <span>${dayStops.length} Uptown delivery ${dayStops.length === 1 ? "stop" : "stops"}</span>
             </div>
 

@@ -7,6 +7,11 @@ const {
   sendStopList,
 } = require("../services/whatsappService");
 
+const {
+  getNextDateForDay,
+  formatDateForDisplay,
+} = require("../utils/dateHelpers");
+
 function createWhatsAppRouter({
   pool,
   createSquarePaymentLink,
@@ -31,6 +36,15 @@ function createWhatsAppRouter({
     "Sunday",
     "Monday",
   ];
+
+  function withDates(dayNames) {
+    return dayNames.map((name) => ({
+      name,
+      date: formatDateForDisplay(
+        getNextDateForDay(name)
+      ),
+    }));
+  }
 
   function getDaysWithStops() {
     const stops =
@@ -246,7 +260,7 @@ function createWhatsAppRouter({
             }
 
             return (
-              `${day}:\n` +
+              `${day}, ${formatDateForDisplay(getNextDateForDay(day))}:\n` +
               dayStops
                 .map(
                   (s) =>
@@ -286,7 +300,7 @@ function createWhatsAppRouter({
 
         await sendDayList(
           from,
-          getDaysWithStops()
+          withDates(getDaysWithStops())
         );
 
         return res.sendStatus(200);
@@ -309,7 +323,7 @@ function createWhatsAppRouter({
         ) {
           await sendDayList(
             from,
-            getDaysWithStops()
+            withDates(getDaysWithStops())
           );
 
           return res.sendStatus(200);
@@ -387,6 +401,11 @@ function createWhatsAppRouter({
           phone: session.order.phone,
           day: session.order.day,
           stop: session.order.stop,
+
+          delivery_date:
+            getNextDateForDay(
+              session.order.day
+            ),
         };
 
         const squareLink =
@@ -400,6 +419,7 @@ function createWhatsAppRouter({
             phone,
             day,
             stop,
+            delivery_date,
             status,
             square_payment_link,
             square_payment_link_id,
@@ -411,10 +431,11 @@ function createWhatsAppRouter({
             $3,
             $4,
             $5,
-            'pending',
             $6,
+            'pending',
             $7,
-            $8
+            $8,
+            $9
           )
           RETURNING *
           `,
@@ -424,6 +445,7 @@ function createWhatsAppRouter({
             newOrder.phone,
             newOrder.day,
             newOrder.stop,
+            newOrder.delivery_date,
             squareLink.url,
             squareLink.paymentLinkId,
             squareLink.squareOrderId,
@@ -454,7 +476,7 @@ function createWhatsAppRouter({
         await sendWhatsAppMessage(
           from,
           `Thanks ${order.name}. Your AAHAAR25 lunch box order request has been saved as pending.\n\n` +
-            `Day: ${order.day}\n` +
+            `Day: ${order.day}, ${formatDateForDisplay(order.delivery_date)}\n` +
             `Stop: ${order.stop}` +
             includesText +
             `\n\nPlease complete payment here:\n` +

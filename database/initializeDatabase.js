@@ -58,6 +58,16 @@ async function initializeDatabase() {
 
   await pool.query(`
     ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS delivery_date DATE;
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_orders_delivery_date
+    ON orders(delivery_date);
+  `);
+
+  await pool.query(`
+    ALTER TABLE orders
     ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMPTZ;
   `);
 

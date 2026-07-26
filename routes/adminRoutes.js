@@ -2,6 +2,10 @@ const express = require("express");
 const crypto = require("crypto");
 const rateLimit = require("express-rate-limit");
 
+const {
+  getTodayInfo,
+} = require("../utils/dateHelpers");
+
 /*
 Basic schema checks for the delivery and
 menu data an admin edits by hand.
@@ -1742,6 +1746,41 @@ function createAdminRouter({
 
           error:
             "Could not save assignment",
+        });
+      }
+    }
+  );
+
+  /*
+  Tells the dashboard what day it actually
+  is right now, in the restaurant's own
+  timezone - used to highlight "today" on
+  the Assignments board.
+  */
+
+  router.get(
+    "/admin/today",
+    requireAdmin,
+    async (req, res) => {
+      try {
+        const today = getTodayInfo();
+
+        return res.json({
+          success: true,
+          dayName: today.dayName,
+          dateString: today.dateString,
+        });
+      } catch (error) {
+        console.error(
+          "Get today error:",
+          error.message
+        );
+
+        return res.status(500).json({
+          success: false,
+
+          error:
+            "Could not determine today's date.",
         });
       }
     }

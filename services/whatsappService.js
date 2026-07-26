@@ -137,11 +137,15 @@ async function sendDayList(to, days) {
     Array.isArray(days) && days.length > 0
       ? days
       : [
-          "Tuesday",
-          "Wednesday",
-          "Thursday",
-          "Friday",
+          { name: "Tuesday", date: null },
+          { name: "Wednesday", date: null },
+          { name: "Thursday", date: null },
+          { name: "Friday", date: null },
         ];
+
+  const firstName = dayList[0].name;
+  const lastName =
+    dayList[dayList.length - 1].name;
 
   return sendWhatsAppPayload({
     messaging_product: "whatsapp",
@@ -160,9 +164,7 @@ async function sendDayList(to, days) {
           "Please choose your delivery day.",
       },
       footer: {
-        text: `Available ${dayList[0]}–${
-          dayList[dayList.length - 1]
-        }`,
+        text: `Available ${firstName}–${lastName}`,
       },
       action: {
         button: "Choose Day",
@@ -172,9 +174,11 @@ async function sendDayList(to, days) {
             rows: dayList
               .slice(0, 10)
               .map((day) => ({
-                id: `DAY_${day}`,
-                title: day,
-                description: `Order for ${day} delivery`,
+                id: `DAY_${day.name}`,
+                title: day.date
+                  ? `${day.name}, ${day.date}`
+                  : day.name,
+                description: `Order for ${day.name} delivery`,
               })),
           },
         ],
