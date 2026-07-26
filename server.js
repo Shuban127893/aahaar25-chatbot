@@ -127,6 +127,27 @@ const ALLOWED_ORIGINS = (
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+/*
+The admin and driver dashboards are pages
+served BY this app itself, at its own Railway
+domain - so that domain must always be trusted,
+or the dashboards can never call their own API.
+
+Railway sets RAILWAY_PUBLIC_DOMAIN automatically
+for any service with public networking on.
+*/
+
+if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+  ALLOWED_ORIGINS.push(
+    `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+  );
+}
+
+console.log(
+  "CORS allowed origins:",
+  ALLOWED_ORIGINS
+);
+
 app.use(
   cors({
     origin: (origin, callback) => {
