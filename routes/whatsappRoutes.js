@@ -278,11 +278,68 @@ function createWhatsAppRouter({
       let session = await getSession(from);
 
       if (hasWord(lower, "cancel")) {
-        await clearSession(from);
+        if (session) {
+          await clearSession(from);
+
+          await sendWhatsAppMessage(
+            from,
+            "Your in-progress order request has been cancelled."
+          );
+
+          return res.sendStatus(200);
+        }
+
+        /*
+        No in-progress order to drop. Check
+        for a real, already-placed order so
+        we never falsely tell a customer
+        their paid order was cancelled when
+        it wasn't - actually cancelling a
+        paid order requires a Square refund,
+        which only the restaurant can do.
+        */
+
+        const recentOrder = await pool.query(
+          `
+          SELECT *
+          FROM orders
+          WHERE phone = $1
+          ORDER BY created_at DESC
+          LIMIT 1
+          `,
+          [from]
+        );
+
+        const latest = recentOrder.rows[0];
+
+        const cancellableStatuses = [
+          "pending",
+          "confirmed",
+        ];
+
+        if (
+          latest &&
+          cancellableStatuses.includes(
+            latest.status
+          )
+        ) {
+          const phone =
+            getDeliveryInfo()?.phone ||
+            "the restaurant";
+
+          await sendWhatsAppMessage(
+            from,
+            `You don't have an order in progress to cancel.\n\n` +
+              `Your most recent order (Day: ${latest.day}, Stop: ${latest.stop}) is currently ${latest.status}. ` +
+              `To cancel or request a refund for an order that's already been placed, please call us at ${phone}.`
+          );
+
+          return res.sendStatus(200);
+        }
 
         await sendWhatsAppMessage(
           from,
-          "Your order request has been cancelled."
+          "You don't have an order in progress right now."
         );
 
         return res.sendStatus(200);
