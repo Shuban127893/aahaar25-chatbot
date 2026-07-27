@@ -566,7 +566,9 @@ function createWhatsAppRouter({
           `AAHAAR25 Order Status\n\n` +
             `Status: ${latestOrder.status}\n` +
             `Day: ${
-              latestOrder.day || "Not selected"
+              latestOrder.day
+                ? `${latestOrder.day}, ${formatDateForDisplay(latestOrder.delivery_date)}`
+                : "Not selected"
             }\n` +
             `Stop: ${
               latestOrder.stop || "Not selected"

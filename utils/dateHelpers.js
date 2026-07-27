@@ -108,20 +108,36 @@ function getNextDateForDay(dayName) {
 }
 
 /*
-Formats a YYYY-MM-DD date string as
-something readable, e.g. "Jul 28". Doesn't
-include the weekday name, since every caller
-already has that separately (e.g. "Tuesday")
-and would otherwise duplicate it.
+Formats a date as something readable, e.g.
+"Jul 28". Doesn't include the weekday name,
+since every caller already has that
+separately (e.g. "Tuesday") and would
+otherwise duplicate it.
+
+Accepts either a plain "YYYY-MM-DD" string
+(from getNextDateForDay) or a real JS Date
+object - Postgres's node driver returns DATE
+columns as Date objects, not strings, so this
+needs to handle both without crashing.
 */
-function formatDateForDisplay(dateString) {
-  if (!dateString) {
+function formatDateForDisplay(dateInput) {
+  if (!dateInput) {
     return "";
   }
 
-  const [year, month, day] = dateString
-    .split("-")
-    .map(Number);
+  let year;
+  let month;
+  let day;
+
+  if (dateInput instanceof Date) {
+    year = dateInput.getUTCFullYear();
+    month = dateInput.getUTCMonth() + 1;
+    day = dateInput.getUTCDate();
+  } else {
+    [year, month, day] = String(dateInput)
+      .split("-")
+      .map(Number);
+  }
 
   const date = new Date(
     Date.UTC(year, month - 1, day)
