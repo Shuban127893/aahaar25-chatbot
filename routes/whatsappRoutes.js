@@ -181,6 +181,32 @@ function createWhatsAppRouter({
     );
   }
 
+  /*
+  Matches a keyword as a whole word, not a
+  raw substring. Plain .includes() would let
+  "hi" match inside "which", "time" match
+  inside "sometime", or "order" match inside
+  "disorder" - this avoids both kinds of
+  false positive.
+  */
+  function hasWord(text, word) {
+    const escaped = word.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      "\\$&"
+    );
+
+    return new RegExp(
+      `\\b${escaped}\\b`,
+      "i"
+    ).test(text);
+  }
+
+  function hasAnyWord(text, words) {
+    return words.some((word) =>
+      hasWord(text, word)
+    );
+  }
+
   function getIncomingText(message) {
     if (message.type === "text") {
       return message.text?.body?.trim() || "";
@@ -251,7 +277,7 @@ function createWhatsAppRouter({
 
       let session = await getSession(from);
 
-      if (lower === "cancel") {
+      if (hasWord(lower, "cancel")) {
         await clearSession(from);
 
         await sendWhatsAppMessage(
@@ -263,9 +289,13 @@ function createWhatsAppRouter({
       }
 
       if (
-        ["hi", "hello", "hey", "menu", "start"].includes(
-          lower
-        )
+        hasAnyWord(lower, [
+          "hi",
+          "hello",
+          "hey",
+          "menu",
+          "start",
+        ])
       ) {
         await sendMainMenu(from);
         return res.sendStatus(200);
@@ -273,8 +303,10 @@ function createWhatsAppRouter({
 
       if (
         userText === "SHOW_PRICE" ||
-        lower.includes("price") ||
-        lower.includes("cost")
+        hasAnyWord(lower, [
+          "price",
+          "cost",
+        ])
       ) {
         await sendWhatsAppMessage(
           from,
@@ -288,10 +320,12 @@ function createWhatsAppRouter({
 
       if (
         userText === "SHOW_DELIVERY" ||
-        lower.includes("time") ||
-        lower.includes("delivery") ||
-        lower.includes("spot") ||
-        lower.includes("location")
+        hasAnyWord(lower, [
+          "time",
+          "delivery",
+          "spot",
+          "location",
+        ])
       ) {
         const stops =
           getDeliveryInfo()?.deliveryStops ||
@@ -337,7 +371,7 @@ function createWhatsAppRouter({
       if (
         userText === "START_ORDER" ||
         (!isQuestion(userText) &&
-          (lower.includes("order") ||
+          (hasWord(lower, "order") ||
             lower.includes("lunch box")))
       ) {
         await setSession(from, "ask_day", {
@@ -536,7 +570,7 @@ function createWhatsAppRouter({
         return res.sendStatus(200);
       }
 
-      if (lower.includes("status")) {
+      if (hasWord(lower, "status")) {
         const result = await pool.query(
           `
           SELECT *
