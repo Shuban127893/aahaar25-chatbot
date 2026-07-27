@@ -22,6 +22,87 @@ const TIME_PATTERN =
 const PRICE_PATTERN =
   /^\$\d+(\.\d{2})?$/;
 
+/*
+Trims whitespace from every text field
+before it's saved.
+
+Without this, an invisible trailing space
+typed into a stop name or location (e.g.
+"Hillsborough ") would display identically
+everywhere, but fail exact-match checks
+elsewhere (like assignment validation)
+against the trimmed version of the same
+text - the two look the same to a human
+but are different strings to the computer.
+*/
+function normalizeDeliveryInfo(data) {
+  const normalized = { ...data };
+
+  if (Array.isArray(normalized.deliveryStops)) {
+    normalized.deliveryStops =
+      normalized.deliveryStops.map(
+        (stop) => ({
+          ...stop,
+          day: String(stop.day || "").trim(),
+
+          location: String(
+            stop.location || ""
+          ).trim(),
+
+          time: String(
+            stop.time || ""
+          ).trim(),
+
+          address: String(
+            stop.address || ""
+          ).trim(),
+        })
+      );
+  }
+
+  if (Array.isArray(normalized.lunchBoxIncludes)) {
+    normalized.lunchBoxIncludes =
+      normalized.lunchBoxIncludes.map(
+        (item) => String(item || "").trim()
+      );
+  }
+
+  return normalized;
+}
+
+function normalizeMenuInfo(data) {
+  const normalized = { ...data };
+
+  if (
+    normalized.categories &&
+    typeof normalized.categories === "object"
+  ) {
+    const categories = {};
+
+    for (const categoryName of Object.keys(
+      normalized.categories
+    )) {
+      categories[categoryName] =
+        normalized.categories[
+          categoryName
+        ].map((item) => ({
+          ...item,
+          name: String(
+            item.name || ""
+          ).trim(),
+
+          price: String(
+            item.price || ""
+          ).trim(),
+        }));
+    }
+
+    normalized.categories = categories;
+  }
+
+  return normalized;
+}
+
 function validateDeliveryInfo(data) {
   if (
     !data ||
@@ -1566,7 +1647,9 @@ function createAdminRouter({
         const allowedDays = [
           ...new Set(
             deliveryStops
-              .map((s) => s.day)
+              .map((s) =>
+                String(s.day || "").trim()
+              )
               .filter(Boolean)
           ),
         ];
@@ -1574,7 +1657,11 @@ function createAdminRouter({
         const allowedStops = [
           ...new Set(
             deliveryStops
-              .map((s) => s.location)
+              .map((s) =>
+                String(
+                  s.location || ""
+                ).trim()
+              )
               .filter(Boolean)
           ),
         ];
@@ -1883,9 +1970,17 @@ function createAdminRouter({
           });
         }
 
+        const normalizedDelivery =
+          normalizeDeliveryInfo(
+            parsedDelivery
+          );
+
+        const normalizedMenu =
+          normalizeMenuInfo(parsedMenu);
+
         const deliveryValidationError =
           validateDeliveryInfo(
-            parsedDelivery
+            normalizedDelivery
           );
 
         if (deliveryValidationError) {
@@ -1897,7 +1992,7 @@ function createAdminRouter({
 
         const menuValidationError =
           validateMenuInfo(
-            parsedMenu
+            normalizedMenu
           );
 
         if (menuValidationError) {
@@ -1908,8 +2003,8 @@ function createAdminRouter({
         }
 
         await saveBusinessDataToDb(
-          parsedDelivery,
-          parsedMenu
+          normalizedDelivery,
+          normalizedMenu
         );
 
         return res.json({
