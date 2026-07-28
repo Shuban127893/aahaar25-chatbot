@@ -5,6 +5,7 @@ const {
   sendMainMenu,
   sendDayList,
   sendStopList,
+  sendQuantityList,
 } = require("../services/whatsappService");
 
 const {
@@ -618,19 +619,39 @@ function createWhatsAppRouter({
           stop,
         });
 
-        await sendWhatsAppMessage(
-          from,
-          "Got it. How many lunch boxes would you like? (Reply with a number, e.g. 1 or 2)"
-        );
+        await sendQuantityList(from);
 
         return res.sendStatus(200);
       }
 
       if (session?.step === "ask_quantity") {
-        const quantity = Number.parseInt(
-          userText.trim(),
-          10
-        );
+        let quantity = null;
+
+        if (userText.startsWith("QTY_")) {
+          const qtyId = userText.replace(
+            "QTY_",
+            ""
+          );
+
+          if (qtyId === "MORE") {
+            await sendWhatsAppMessage(
+              from,
+              "No problem - just type in the exact number of lunch boxes you'd like (up to 20)."
+            );
+
+            return res.sendStatus(200);
+          }
+
+          quantity = Number.parseInt(
+            qtyId,
+            10
+          );
+        } else {
+          quantity = Number.parseInt(
+            userText.trim(),
+            10
+          );
+        }
 
         const validQuantity =
           Number.isInteger(quantity) &&
@@ -640,8 +661,10 @@ function createWhatsAppRouter({
         if (!validQuantity) {
           await sendWhatsAppMessage(
             from,
-            "Please reply with just a number for how many lunch boxes you'd like (1-20)."
+            "Please type just a number for how many lunch boxes you'd like (1-20)."
           );
+
+          await sendQuantityList(from);
 
           return res.sendStatus(200);
         }
@@ -668,7 +691,7 @@ function createWhatsAppRouter({
         await sendWhatsAppMessage(
           from,
           `${quantity} lunch box${quantity > 1 ? "es" : ""} at $${unitDisplay} each = $${totalDisplay} total.\n\n` +
-            `What name should we put on the order?`
+            `Step 4 of 4:\nWhat name should we put on the order?`
         );
 
         return res.sendStatus(200);

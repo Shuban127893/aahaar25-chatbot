@@ -160,7 +160,7 @@ async function sendDayList(to, days) {
       body: {
         text:
           "Great choice! 🍱\n\n" +
-          "Step 1 of 3:\n" +
+          "Step 1 of 4:\n" +
           "Please choose your delivery day.",
       },
       footer: {
@@ -205,7 +205,7 @@ async function sendStopList(to, day, stops) {
       },
       body: {
         text:
-          "Step 2 of 3:\n" +
+          "Step 2 of 4:\n" +
           "Choose your Uptown delivery stop.",
       },
       footer: {
@@ -227,6 +227,58 @@ async function sendStopList(to, day, stops) {
                 ),
                 description: stop.time || "",
               })),
+          },
+        ],
+      },
+    },
+  });
+}
+
+async function sendQuantityList(to) {
+  return sendWhatsAppPayload({
+    messaging_product: "whatsapp",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "list",
+      header: {
+        type: "text",
+        text: "🍱 Lunch Box Quantity",
+      },
+      body: {
+        text:
+          "Step 3 of 4:\n" +
+          "How many lunch boxes would you like?",
+      },
+      action: {
+        button: "Choose Quantity",
+        sections: [
+          {
+            title: "Quantity",
+            rows: [
+              {
+                id: "QTY_1",
+                title: "1 lunch box",
+              },
+              {
+                id: "QTY_2",
+                title: "2 lunch boxes",
+              },
+              {
+                id: "QTY_3",
+                title: "3 lunch boxes",
+              },
+              {
+                id: "QTY_4",
+                title: "4 lunch boxes",
+              },
+              {
+                id: "QTY_MORE",
+                title: "More than 4",
+                description:
+                  "Type in the exact number",
+              },
+            ],
           },
         ],
       },
@@ -285,6 +337,7 @@ module.exports = {
   sendMainMenu,
   sendDayList,
   sendStopList,
+  sendQuantityList,
   sendDriverLoginCode,
   sendDriverInvite,
 };
