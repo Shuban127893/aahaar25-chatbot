@@ -718,6 +718,9 @@ function createDriverRouter({
           requestedDay ||
           currentDeliveryDay();
 
+        const targetDate =
+          getNextDateForDay(day);
+
         const assignments =
           await pool.query(
             `
@@ -751,6 +754,11 @@ function createDriverRouter({
                  driver_assignments.day
              AND orders.stop =
                  driver_assignments.stop
+             AND (
+               orders.delivery_date IS NULL
+               OR orders.delivery_date =
+                  $3
+             )
 
             WHERE
               driver_assignments.driver_id =
@@ -781,6 +789,7 @@ function createDriverRouter({
             [
               req.driver.id,
               day,
+              targetDate,
             ]
           );
 
@@ -983,7 +992,10 @@ function createDriverRouter({
               status = 'confirmed'
               AND day = $1
               AND stop = $2
-              AND delivery_date = $3
+              AND (
+                delivery_date IS NULL
+                OR delivery_date = $3
+              )
             `,
             [
               day,
@@ -994,6 +1006,17 @@ function createDriverRouter({
 
         const customers =
           orderResult.rows;
+
+        console.log(
+          "Notify-stop order lookup:",
+          {
+            day,
+            stop,
+            targetDate,
+            matchedOrders:
+              customers.length,
+          }
+        );
 
         const messages = {
           "10min":
@@ -1044,7 +1067,10 @@ function createDriverRouter({
               status = 'confirmed'
               AND day = $1
               AND stop = $2
-              AND delivery_date = $3
+              AND (
+                delivery_date IS NULL
+                OR delivery_date = $3
+              )
             `,
             [
               day,
