@@ -750,10 +750,10 @@ function createDriverRouter({
                  driver_assignments.stop
 
             LEFT JOIN orders
-              ON orders.day =
-                 driver_assignments.day
-             AND orders.stop =
-                 driver_assignments.stop
+              ON LOWER(TRIM(orders.day)) =
+                 LOWER(TRIM(driver_assignments.day))
+             AND LOWER(TRIM(orders.stop)) =
+                 LOWER(TRIM(driver_assignments.stop))
              AND (
                orders.delivery_date IS NULL
                OR orders.delivery_date =
@@ -990,8 +990,8 @@ function createDriverRouter({
 
             WHERE
               status = 'confirmed'
-              AND day = $1
-              AND stop = $2
+              AND LOWER(TRIM(day)) = LOWER(TRIM($1))
+              AND LOWER(TRIM(stop)) = LOWER(TRIM($2))
               AND (
                 delivery_date IS NULL
                 OR delivery_date = $3
@@ -1065,8 +1065,8 @@ function createDriverRouter({
 
             WHERE
               status = 'confirmed'
-              AND day = $1
-              AND stop = $2
+              AND LOWER(TRIM(day)) = LOWER(TRIM($1))
+              AND LOWER(TRIM(stop)) = LOWER(TRIM($2))
               AND (
                 delivery_date IS NULL
                 OR delivery_date = $3
