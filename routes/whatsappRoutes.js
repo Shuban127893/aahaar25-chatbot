@@ -148,7 +148,7 @@ function createWhatsAppRouter({
     );
 
     if (exact) {
-      return exact.location;
+      return String(exact.location).trim();
     }
 
     // Fall back to a loose word-overlap match,
@@ -164,7 +164,9 @@ function createWhatsAppRouter({
       );
     });
 
-    return loose ? loose.location : null;
+    return loose
+      ? String(loose.location).trim()
+      : null;
   }
 
   function isQuestion(text = "") {
@@ -327,11 +329,15 @@ function createWhatsAppRouter({
             getDeliveryInfo()?.phone ||
             "the restaurant";
 
+          const statusText =
+            latest.status === "confirmed"
+              ? "confirmed and paid"
+              : "placed, but payment hasn't gone through yet";
+
           await sendWhatsAppMessage(
             from,
-            `You don't have an order in progress to cancel.\n\n` +
-              `Your most recent order (Day: ${latest.day}, Stop: ${latest.stop}) is currently ${latest.status}. ` +
-              `To cancel or request a refund for an order that's already been placed, please call us at ${phone}.`
+            `Your order (Day: ${latest.day}, Stop: ${latest.stop}) is ${statusText}.\n\n` +
+              `Since it's already been placed, please call us at ${phone} to cancel it or request a refund.`
           );
 
           return res.sendStatus(200);

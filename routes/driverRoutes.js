@@ -2,6 +2,10 @@ const express = require("express");
 const rateLimit = require("express-rate-limit");
 
 const {
+  getNextDateForDay,
+} = require("../utils/dateHelpers");
+
+const {
   normalizePhone,
   generateSixDigitCode,
   hashOneTimeCode,
@@ -91,7 +95,9 @@ function createDriverRouter({
     const locations = [
       ...new Set(
         stops
-          .map((s) => s.location)
+          .map((s) =>
+            String(s.location || "").trim()
+          )
           .filter(Boolean)
       ),
     ];
@@ -924,6 +930,22 @@ function createDriverRouter({
           });
         }
 
+        /*
+        "day" is just a recurring weekday
+        name ("Wednesday"), shared by every
+        occurrence of that weekday across
+        every week. Filtering only by day
+        would let a stale confirmed order
+        from a past week bleed into today's
+        notifications or delivery marking.
+        targetDate scopes this to the real
+        calendar date this occurrence of
+        the weekday refers to.
+        */
+
+        const targetDate =
+          getNextDateForDay(day);
+
         const orderResult =
           await pool.query(
             `
@@ -935,10 +957,12 @@ function createDriverRouter({
               status = 'confirmed'
               AND day = $1
               AND stop = $2
+              AND delivery_date = $3
             `,
             [
               day,
               stop,
+              targetDate,
             ]
           );
 
@@ -994,10 +1018,12 @@ function createDriverRouter({
               status = 'confirmed'
               AND day = $1
               AND stop = $2
+              AND delivery_date = $3
             `,
             [
               day,
               stop,
+              targetDate,
             ]
           );
         }

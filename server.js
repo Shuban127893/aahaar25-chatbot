@@ -11,6 +11,11 @@ const fs = require("fs");
 
 const Anthropic = require("@anthropic-ai/sdk");
 
+const {
+  normalizeDeliveryInfo,
+  normalizeMenuInfo,
+} = require("./utils/businessDataNormalization");
+
 const pool = require(
   "./config/database"
 );
@@ -276,12 +281,34 @@ async function loadBusinessDataFromDb() {
   }
 
   if (rows.delivery_info) {
-    deliveryInfo = JSON.parse(
-      rows.delivery_info
+    const normalized = normalizeDeliveryInfo(
+      JSON.parse(rows.delivery_info)
     );
+
+    deliveryInfo = normalized;
+
+    // Self-heal: if the stored data had
+    // stray whitespace, write the cleaned
+    // version back so this only needs to
+    // happen once, not on every boot.
+    if (
+      JSON.stringify(normalized) !==
+      rows.delivery_info
+    ) {
+      await pool.query(
+        `UPDATE business_data
+         SET value = $1, updated_at = NOW()
+         WHERE key = 'delivery_info';`,
+        [JSON.stringify(normalized)]
+      );
+    }
   } else {
     // First-ever boot: seed the database
     // from the JSON file that shipped in git.
+    deliveryInfo = normalizeDeliveryInfo(
+      deliveryInfo
+    );
+
     await pool.query(
       `INSERT INTO business_data (key, value)
        VALUES ('delivery_info', $1)
@@ -291,8 +318,26 @@ async function loadBusinessDataFromDb() {
   }
 
   if (rows.menu_info) {
-    menuInfo = JSON.parse(rows.menu_info);
+    const normalized = normalizeMenuInfo(
+      JSON.parse(rows.menu_info)
+    );
+
+    menuInfo = normalized;
+
+    if (
+      JSON.stringify(normalized) !==
+      rows.menu_info
+    ) {
+      await pool.query(
+        `UPDATE business_data
+         SET value = $1, updated_at = NOW()
+         WHERE key = 'menu_info';`,
+        [JSON.stringify(normalized)]
+      );
+    }
   } else {
+    menuInfo = normalizeMenuInfo(menuInfo);
+
     await pool.query(
       `INSERT INTO business_data (key, value)
        VALUES ('menu_info', $1)
