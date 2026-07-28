@@ -384,6 +384,8 @@ If a customer asks about a delivery location that is not listed, respond politel
 
 Keep answers short, friendly, and accurate. If you don't have enough information to answer, tell the customer to call ${deliveryInfo.phone}.
 
+If a customer asks about cancelling an order, refunds, or your cancellation policy, use the exact "cancellationPolicy" text in the delivery information below - do not paraphrase away any specific detail like timing or conditions.
+
 If a customer asks what happens to their personal information, how their data is used, or anything about privacy, let them know they can read the full privacy notice at ${
   process.env.RAILWAY_PUBLIC_DOMAIN
     ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}/privacy.html`
@@ -614,6 +616,38 @@ app.post(
 WhatsApp customer-ordering routes
 */
 
+/*
+The real, current lunch box price, read
+from menu data instead of a hardcoded
+number - so if the price ever changes via
+the admin editor, ordering picks it up
+immediately with no code change needed.
+*/
+function getLunchBoxPriceCents() {
+  const item =
+    menuInfo?.categories?.uptownLunchBox?.[0];
+
+  const priceText = String(
+    item?.price || ""
+  ).replace("$", "");
+
+  const priceNumber = Number(priceText);
+
+  if (
+    !item ||
+    Number.isNaN(priceNumber) ||
+    priceNumber <= 0
+  ) {
+    console.error(
+      "Could not read a valid lunch box price from menu data. Falling back to $13.99."
+    );
+
+    return 1399;
+  }
+
+  return Math.round(priceNumber * 100);
+}
+
 app.use(
   createWhatsAppRouter({
     pool,
@@ -622,6 +656,7 @@ app.use(
     client,
     buildSystemPrompt,
     getDeliveryInfo: () => deliveryInfo,
+    getLunchBoxPriceCents,
   })
 );
 

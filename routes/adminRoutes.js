@@ -427,7 +427,11 @@ function createAdminRouter({
                       'confirmed',
                       'delivered'
                     )
-                    THEN 1399
+                    THEN
+                      COALESCE(
+                        total_price_cents,
+                        1399
+                      )
                     ELSE 0
                   END
                 ),

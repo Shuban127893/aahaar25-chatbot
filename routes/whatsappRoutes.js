@@ -19,6 +19,7 @@ function createWhatsAppRouter({
   client,
   buildSystemPrompt,
   getDeliveryInfo,
+  getLunchBoxPriceCents,
 }) {
   const router = express.Router();
 
@@ -612,14 +613,62 @@ function createWhatsAppRouter({
           return res.sendStatus(200);
         }
 
-        await setSession(from, "ask_name", {
+        await setSession(from, "ask_quantity", {
           ...session.order,
           stop,
         });
 
         await sendWhatsAppMessage(
           from,
-          "Got it. What name should we put on the order?"
+          "Got it. How many lunch boxes would you like? (Reply with a number, e.g. 1 or 2)"
+        );
+
+        return res.sendStatus(200);
+      }
+
+      if (session?.step === "ask_quantity") {
+        const quantity = Number.parseInt(
+          userText.trim(),
+          10
+        );
+
+        const validQuantity =
+          Number.isInteger(quantity) &&
+          quantity >= 1 &&
+          quantity <= 20;
+
+        if (!validQuantity) {
+          await sendWhatsAppMessage(
+            from,
+            "Please reply with just a number for how many lunch boxes you'd like (1-20)."
+          );
+
+          return res.sendStatus(200);
+        }
+
+        const unitPriceCents =
+          getLunchBoxPriceCents();
+
+        const totalPriceCents =
+          unitPriceCents * quantity;
+
+        await setSession(from, "ask_name", {
+          ...session.order,
+          quantity,
+        });
+
+        const totalDisplay = (
+          totalPriceCents / 100
+        ).toFixed(2);
+
+        const unitDisplay = (
+          unitPriceCents / 100
+        ).toFixed(2);
+
+        await sendWhatsAppMessage(
+          from,
+          `${quantity} lunch box${quantity > 1 ? "es" : ""} at $${unitDisplay} each = $${totalDisplay} total.\n\n` +
+            `What name should we put on the order?`
         );
 
         return res.sendStatus(200);
@@ -640,12 +689,27 @@ function createWhatsAppRouter({
           return res.sendStatus(200);
         }
 
+        const unitPriceCents =
+          getLunchBoxPriceCents();
+
+        const quantity =
+          Number.isInteger(
+            session.order.quantity
+          ) && session.order.quantity > 0
+            ? session.order.quantity
+            : 1;
+
+        const totalPriceCents =
+          unitPriceCents * quantity;
+
         const newOrder = {
           order_id: generateOrderId(),
           name: cleanName,
           phone: session.order.phone,
           day: session.order.day,
           stop: session.order.stop,
+          quantity,
+          unit_price_cents: unitPriceCents,
 
           delivery_date:
             getNextDateForDay(
@@ -665,6 +729,8 @@ function createWhatsAppRouter({
             day,
             stop,
             delivery_date,
+            quantity,
+            total_price_cents,
             status,
             square_payment_link,
             square_payment_link_id,
@@ -677,10 +743,12 @@ function createWhatsAppRouter({
             $4,
             $5,
             $6,
-            'pending',
             $7,
             $8,
-            $9
+            'pending',
+            $9,
+            $10,
+            $11
           )
           RETURNING *
           `,
@@ -691,6 +759,8 @@ function createWhatsAppRouter({
             newOrder.day,
             newOrder.stop,
             newOrder.delivery_date,
+            newOrder.quantity,
+            totalPriceCents,
             squareLink.url,
             squareLink.paymentLinkId,
             squareLink.squareOrderId,
@@ -722,12 +792,43 @@ function createWhatsAppRouter({
           from,
           `Thanks ${order.name}. Your AAHAAR25 lunch box order request has been saved as pending.\n\n` +
             `Day: ${order.day}, ${formatDateForDisplay(order.delivery_date)}\n` +
-            `Stop: ${order.stop}` +
+            `Stop: ${order.stop}\n` +
+            `Quantity: ${order.quantity}\n` +
+            `Total: $${(order.total_price_cents / 100).toFixed(2)}` +
             includesText +
             `\n\nPlease complete payment here:\n` +
             `${order.square_payment_link}\n\n` +
             `After payment, your order should confirm automatically.`
         );
+
+        return res.sendStatus(200);
+      }
+
+      if (
+        hasAnyWord(lower, [
+          "policy",
+          "refund",
+        ])
+      ) {
+        const policyText =
+          getDeliveryInfo()
+            ?.cancellationPolicy;
+
+        const reply = await craftReply(
+          userText,
+          policyText
+            ? `Here is the exact, verified cancellation and refund policy - convey this accurately: "${policyText}"`
+            : `A specific written policy isn't set up yet. Tell the customer to call ${getDeliveryInfo()?.phone || "the restaurant"} with any cancellation or refund questions.`,
+          policyText ||
+            `Please call us at ${getDeliveryInfo()?.phone || "the restaurant"} with any cancellation or refund questions.`
+        );
+
+        await sendWhatsAppMessage(
+          from,
+          reply
+        );
+
+        await sendMainMenu(from);
 
         return res.sendStatus(200);
       }
@@ -770,7 +871,9 @@ function createWhatsAppRouter({
         const reply = await craftReply(
           userText,
           `The customer's most recent order: status is "${latestOrder.status}", ` +
-            `day/date is ${dayFacts}, stop is ${latestOrder.stop || "not selected yet"}. ` +
+            `day/date is ${dayFacts}, stop is ${latestOrder.stop || "not selected yet"}, ` +
+            `quantity is ${latestOrder.quantity || 1}, ` +
+            `total price is $${((latestOrder.total_price_cents || 1399) / 100).toFixed(2)}. ` +
             `Report these exact facts clearly.`,
           `AAHAAR25 Order Status\n\n` +
             `Status: ${latestOrder.status}\n` +
@@ -781,7 +884,11 @@ function createWhatsAppRouter({
             }\n` +
             `Stop: ${
               latestOrder.stop || "Not selected"
-            }`
+            }\n` +
+            `Quantity: ${
+              latestOrder.quantity || 1
+            }\n` +
+            `Total: $${((latestOrder.total_price_cents || 1399) / 100).toFixed(2)}`
         );
 
         await sendWhatsAppMessage(

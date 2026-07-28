@@ -95,6 +95,19 @@ async function createSquarePaymentLink(
     );
   }
 
+  const quantity =
+    Number.isInteger(order.quantity) &&
+    order.quantity > 0
+      ? order.quantity
+      : 1;
+
+  const unitPriceCents =
+    Number.isInteger(
+      order.unit_price_cents
+    ) && order.unit_price_cents > 0
+      ? order.unit_price_cents
+      : 1399;
+
   const requestBody = {
     idempotency_key: order.order_id,
 
@@ -112,6 +125,7 @@ async function createSquarePaymentLink(
         phone: order.phone,
         day: order.day,
         stop: order.stop,
+        quantity: String(quantity),
       },
 
       line_items: [
@@ -119,10 +133,10 @@ async function createSquarePaymentLink(
           name:
             `AAHAAR25 Lunch Box - ${order.stop}`,
 
-          quantity: "1",
+          quantity: String(quantity),
 
           base_price_money: {
-            amount: 1399,
+            amount: unitPriceCents,
             currency: "USD",
           },
         },

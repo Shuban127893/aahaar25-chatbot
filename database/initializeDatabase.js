@@ -62,6 +62,16 @@ async function initializeDatabase() {
   `);
 
   await pool.query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1;
+  `);
+
+  await pool.query(`
+    ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS total_price_cents INTEGER;
+  `);
+
+  await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_orders_delivery_date
     ON orders(delivery_date);
   `);

@@ -3676,6 +3676,11 @@
                             : ""
                         }
                       </span>
+
+                      <span class="secondary">
+                        Qty: ${order.quantity || 1} ·
+                        $${((order.total_price_cents || 1399) / 100).toFixed(2)}
+                      </span>
                     </td>
 
                     <td>
@@ -3720,6 +3725,11 @@
             ${mobileMeta(
               "Delivery",
               `${order.day || "—"} · ${order.stop || "No stop"}`
+            )}
+
+            ${mobileMeta(
+              "Quantity / Total",
+              `${order.quantity || 1} · $${((order.total_price_cents || 1399) / 100).toFixed(2)}`
             )}
 
             ${mobileMeta(
