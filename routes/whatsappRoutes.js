@@ -169,6 +169,68 @@ function createWhatsAppRouter({
       : null;
   }
 
+  /*
+  Generates a natural-sounding reply via
+  Claude instead of a fixed template string.
+
+  facts must contain every real detail the
+  reply should mention - Claude is told to
+  use ONLY what's given here, so it can
+  phrase things naturally without ever
+  inventing an order status, date, price,
+  or any other detail we haven't verified
+  ourselves.
+
+  Always has a plain-text fallback, so a
+  customer never gets silence if the AI
+  call fails for any reason.
+  */
+  async function craftReply(
+    userMessage,
+    facts,
+    fallback
+  ) {
+    try {
+      const response =
+        await client.messages.create({
+          model:
+            "claude-haiku-4-5-20251001",
+          max_tokens: 200,
+
+          system:
+            buildSystemPrompt() +
+            `\n\nFor this reply, use ONLY the following verified facts - do not add, guess, or invent anything beyond them:\n\n${facts}\n\n` +
+            `Write a short, warm, natural WhatsApp message. No markdown formatting, no headers.`,
+
+          messages: [
+            {
+              role: "user",
+              content:
+                userMessage ||
+                "(no specific message)",
+            },
+          ],
+        });
+
+      const text = response.content
+        .filter(
+          (block) => block.type === "text"
+        )
+        .map((block) => block.text)
+        .join("\n")
+        .trim();
+
+      return text || fallback;
+    } catch (error) {
+      console.error(
+        "craftReply error:",
+        error.message
+      );
+
+      return fallback;
+    }
+  }
+
   function isQuestion(text = "") {
     const lower = text
       .toLowerCase()
@@ -283,9 +345,15 @@ function createWhatsAppRouter({
         if (session) {
           await clearSession(from);
 
+          const reply = await craftReply(
+            userText,
+            `The customer's in-progress (not yet paid) order request has just been successfully cancelled/dropped.`,
+            "Your in-progress order request has been cancelled."
+          );
+
           await sendWhatsAppMessage(
             from,
-            "Your in-progress order request has been cancelled."
+            reply
           );
 
           return res.sendStatus(200);
@@ -334,18 +402,33 @@ function createWhatsAppRouter({
               ? "confirmed and paid"
               : "placed, but payment hasn't gone through yet";
 
-          await sendWhatsAppMessage(
-            from,
+          const reply = await craftReply(
+            userText,
+            `The customer has no order currently in progress (nothing to drop). ` +
+              `However, they DO have a real, already-placed order: Day ${latest.day}, Stop ${latest.stop}, status: ${statusText}. ` +
+              `Cancelling or refunding an order that's already been placed requires calling the restaurant directly at ${phone} - this cannot be done automatically. ` +
+              `Tell the customer this clearly, without saying their order was cancelled (it was not).`,
             `Your order (Day: ${latest.day}, Stop: ${latest.stop}) is ${statusText}.\n\n` +
               `Since it's already been placed, please call us at ${phone} to cancel it or request a refund.`
+          );
+
+          await sendWhatsAppMessage(
+            from,
+            reply
           );
 
           return res.sendStatus(200);
         }
 
+        const reply = await craftReply(
+          userText,
+          `The customer has no order in progress right now, and no recent placed order either. There is nothing to cancel.`,
+          "You don't have an order in progress right now."
+        );
+
         await sendWhatsAppMessage(
           from,
-          "You don't have an order in progress right now."
+          reply
         );
 
         return res.sendStatus(200);
@@ -371,9 +454,17 @@ function createWhatsAppRouter({
           "cost",
         ])
       ) {
+        const reply = await craftReply(
+          userText === "SHOW_PRICE"
+            ? "What's the price of the Uptown Lunch Box?"
+            : userText,
+          `Answer using the real, current menu prices already provided to you above. Do not use any price you're not certain is currently accurate.`,
+          "Please check our menu for current pricing, or call us directly."
+        );
+
         await sendWhatsAppMessage(
           from,
-          "The AAHAAR25 Uptown Lunch Box is $13.99 plus applicable taxes."
+          reply
         );
 
         await sendMainMenu(from);
@@ -411,7 +502,7 @@ function createWhatsAppRouter({
               dayStops
                 .map(
                   (s) =>
-                    `• ${s.location} — ${s.time}`
+                    `${s.location} at ${s.time}`
                 )
                 .join("\n")
             );
@@ -419,11 +510,19 @@ function createWhatsAppRouter({
           .filter(Boolean)
           .join("\n\n");
 
+        const reply = stopLines
+          ? await craftReply(
+              userText === "SHOW_DELIVERY"
+                ? "What are your delivery stops and times?"
+                : userText,
+              `These are the exact, verified delivery stops, days, and dates - use these dates and times exactly as given, do not recalculate or guess any date:\n\n${stopLines}`,
+              `AAHAAR25 Uptown delivery stops:\n\n${stopLines}`
+            )
+          : "Delivery stop information isn't available right now. Please call us for details.";
+
         await sendWhatsAppMessage(
           from,
-          stopLines
-            ? `AAHAAR25 Uptown delivery stops:\n\n${stopLines}`
-            : "Delivery stop information isn't available right now. Please call us for details."
+          reply
         );
 
         await sendMainMenu(from);
@@ -646,9 +745,15 @@ function createWhatsAppRouter({
         );
 
         if (result.rows.length === 0) {
+          const reply = await craftReply(
+            userText,
+            `This customer has no order on file connected to their WhatsApp number.`,
+            "I couldn't find an order connected to this WhatsApp number."
+          );
+
           await sendWhatsAppMessage(
             from,
-            "I couldn't find an order connected to this WhatsApp number."
+            reply
           );
 
           await sendMainMenu(from);
@@ -658,8 +763,15 @@ function createWhatsAppRouter({
 
         const latestOrder = result.rows[0];
 
-        await sendWhatsAppMessage(
-          from,
+        const dayFacts = latestOrder.day
+          ? `${latestOrder.day}, ${formatDateForDisplay(latestOrder.delivery_date)}`
+          : "not selected yet";
+
+        const reply = await craftReply(
+          userText,
+          `The customer's most recent order: status is "${latestOrder.status}", ` +
+            `day/date is ${dayFacts}, stop is ${latestOrder.stop || "not selected yet"}. ` +
+            `Report these exact facts clearly.`,
           `AAHAAR25 Order Status\n\n` +
             `Status: ${latestOrder.status}\n` +
             `Day: ${
@@ -670,6 +782,11 @@ function createWhatsAppRouter({
             `Stop: ${
               latestOrder.stop || "Not selected"
             }`
+        );
+
+        await sendWhatsAppMessage(
+          from,
+          reply
         );
 
         return res.sendStatus(200);

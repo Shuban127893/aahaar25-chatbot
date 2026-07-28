@@ -384,6 +384,12 @@ If a customer asks about a delivery location that is not listed, respond politel
 
 Keep answers short, friendly, and accurate. If you don't have enough information to answer, tell the customer to call ${deliveryInfo.phone}.
 
+If a customer asks what happens to their personal information, how their data is used, or anything about privacy, let them know they can read the full privacy notice at ${
+  process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}/privacy.html`
+    : "our website's privacy page"
+}. Only mention this page if they specifically ask about privacy or their data - don't bring it up otherwise.
+
 DELIVERY INFORMATION:
 ${JSON.stringify(deliveryInfo, null, 2)}
 
