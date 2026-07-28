@@ -1608,8 +1608,16 @@ function createAdminRouter({
               );
 
         if (
-          !allowedDays.includes(day) ||
-          !allowedStops.includes(stop)
+          !allowedDays.some(
+            (d) =>
+              d.toLowerCase() ===
+              day.toLowerCase()
+          ) ||
+          !allowedStops.some(
+            (s) =>
+              s.toLowerCase() ===
+              stop.toLowerCase()
+          )
         ) {
           return res.status(400).json({
             success: false,
