@@ -900,13 +900,13 @@ function createDriverRouter({
         const assignment =
           await pool.query(
             `
-            SELECT id
+            SELECT id, day, stop
 
             FROM driver_assignments
 
             WHERE
-              day = $1
-              AND stop = $2
+              LOWER(TRIM(day)) = LOWER(TRIM($1))
+              AND LOWER(TRIM(stop)) = LOWER(TRIM($2))
               AND driver_id = $3
 
             LIMIT 1
@@ -922,6 +922,32 @@ function createDriverRouter({
           assignment.rows.length ===
           0
         ) {
+          const allDriverRows =
+            await pool.query(
+              `
+              SELECT day, stop
+              FROM driver_assignments
+              WHERE driver_id = $1
+              `,
+              [req.driver.id]
+            );
+
+          console.error(
+            "Assignment not found. Comparing:",
+            {
+              incomingDay: JSON.stringify(day),
+              incomingStop: JSON.stringify(stop),
+              driverId: req.driver.id,
+              thisDriversAssignments:
+                allDriverRows.rows.map(
+                  (row) => ({
+                    day: JSON.stringify(row.day),
+                    stop: JSON.stringify(row.stop),
+                  })
+                ),
+            }
+          );
+
           return res.status(403).json({
             success: false,
 
