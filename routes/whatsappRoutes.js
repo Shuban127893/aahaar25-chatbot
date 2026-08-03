@@ -113,6 +113,67 @@ function createWhatsAppRouter({
     twenty: 20,
   };
 
+  /*
+  Standard edit-distance calculation, used
+  to catch small misspellings like "fiev" or
+  "sevn" without guessing wrong on something
+  that affects how much someone gets charged.
+  */
+  function levenshteinDistance(a, b) {
+    const matrix = Array.from(
+      { length: a.length + 1 },
+      (_, i) => [i]
+    );
+
+    for (let j = 0; j <= b.length; j++) {
+      matrix[0][j] = j;
+    }
+
+    for (let i = 1; i <= a.length; i++) {
+      for (let j = 1; j <= b.length; j++) {
+        matrix[i][j] =
+          a[i - 1] === b[j - 1]
+            ? matrix[i - 1][j - 1]
+            : 1 +
+              Math.min(
+                matrix[i - 1][j - 1],
+                matrix[i - 1][j],
+                matrix[i][j - 1]
+              );
+      }
+    }
+
+    return matrix[a.length][b.length];
+  }
+
+  /*
+  Only auto-corrects a misspelling when
+  exactly ONE number word is a close, obvious
+  match - e.g. "fiev" only being close to
+  "five". If two different number words are
+  both plausible, this refuses to guess and
+  returns null instead, since a wrong guess
+  here means charging someone for the wrong
+  quantity.
+  */
+  function fuzzyMatchNumberWord(text) {
+    const candidates = Object.keys(
+      NUMBER_WORDS
+    ).filter((word) => {
+      const maxDistance =
+        word.length <= 4 ? 1 : 2;
+
+      return (
+        levenshteinDistance(text, word) <=
+        maxDistance
+      );
+    });
+
+    return candidates.length === 1
+      ? NUMBER_WORDS[candidates[0]]
+      : null;
+  }
+
   function parseQuantityText(text) {
     const cleaned = String(text)
       .trim()
@@ -122,7 +183,21 @@ function createWhatsAppRouter({
       return NUMBER_WORDS[cleaned];
     }
 
-    return Number.parseInt(cleaned, 10);
+    const digitParse = Number.parseInt(
+      cleaned,
+      10
+    );
+
+    if (Number.isInteger(digitParse)) {
+      return digitParse;
+    }
+
+    const fuzzyMatch =
+      fuzzyMatchNumberWord(cleaned);
+
+    return fuzzyMatch !== null
+      ? fuzzyMatch
+      : NaN;
   }
 
   function withDates(dayNames, weeksAhead = 0) {
@@ -274,19 +349,20 @@ function createWhatsAppRouter({
   async function craftReply(
     userMessage,
     facts,
-    fallback
+    fallback,
+    maxTokens = 300
   ) {
     try {
       const response =
         await client.messages.create({
           model:
             "claude-haiku-4-5-20251001",
-          max_tokens: 200,
+          max_tokens: maxTokens,
 
           system:
             buildSystemPrompt() +
             `\n\nFor this reply, use ONLY the following verified facts - do not add, guess, or invent anything beyond them:\n\n${facts}\n\n` +
-            `Write a short, warm, natural WhatsApp message. No markdown formatting, no headers.`,
+            `Write a short, warm, natural WhatsApp message. No markdown formatting, no headers. Cover every fact given above completely - never cut off partway through a list.`,
 
           messages: [
             {
@@ -305,6 +381,17 @@ function createWhatsAppRouter({
         .map((block) => block.text)
         .join("\n")
         .trim();
+
+      const wasCutOff =
+        response.stop_reason === "max_tokens";
+
+      if (wasCutOff) {
+        console.error(
+          "craftReply was cut off by max_tokens - falling back to the deterministic version instead of sending a truncated reply."
+        );
+
+        return fallback;
+      }
 
       return text || fallback;
     } catch (error) {
@@ -602,7 +689,8 @@ function createWhatsAppRouter({
                 ? "What are your delivery stops and times?"
                 : userText,
               `These are the exact, verified delivery stops, days, and dates - use these dates and times exactly as given, do not recalculate or guess any date:\n\n${stopLines}`,
-              `AAHAAR25 Uptown delivery stops:\n\n${stopLines}`
+              `AAHAAR25 Uptown delivery stops:\n\n${stopLines}`,
+              800
             )
           : "Delivery stop information isn't available right now. Please call us for details.";
 
