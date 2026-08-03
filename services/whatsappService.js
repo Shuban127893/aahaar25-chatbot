@@ -135,7 +135,11 @@ async function sendMainMenu(to) {
 async function sendDayList(
   to,
   days,
-  { showNextWeekOption = false, weekLabel = null } = {}
+  {
+    showNextWeekOption = false,
+    showThisWeekOption = false,
+    weekLabel = null,
+  } = {}
 ) {
   const dayList =
     Array.isArray(days) && days.length > 0
@@ -151,8 +155,11 @@ async function sendDayList(
   const lastName =
     dayList[dayList.length - 1].name;
 
+  const hasExtraOption =
+    showNextWeekOption || showThisWeekOption;
+
   const rows = dayList
-    .slice(0, showNextWeekOption ? 9 : 10)
+    .slice(0, hasExtraOption ? 9 : 10)
     .map((day) => ({
       id: `DAY_${day.name}`,
       title: day.date
@@ -167,6 +174,15 @@ async function sendDayList(
       title: "📅 Order for next week",
       description:
         "See next week's delivery days instead",
+    });
+  }
+
+  if (showThisWeekOption) {
+    rows.push({
+      id: "THIS_WEEK",
+      title: "◀️ Back to this week",
+      description:
+        "See this week's delivery days instead",
     });
   }
 

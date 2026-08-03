@@ -223,10 +223,17 @@ function createWhatsAppRouter({
     weeksAhead
   ) {
     if (weeksAhead === 1) {
+      const thisWeekDaysStillAvailable =
+        getThisWeekOrderableDays().length > 0;
+
       await sendDayList(
         from,
         withDates(getDaysWithStops(), 1),
-        { weekLabel: "next week" }
+        {
+          weekLabel: "next week",
+          showThisWeekOption:
+            thisWeekDaysStillAvailable,
+        }
       );
 
       return;
@@ -734,6 +741,20 @@ function createWhatsAppRouter({
           });
 
           await sendDayPicker(from, 1);
+
+          return res.sendStatus(200);
+        }
+
+        if (
+          userText === "THIS_WEEK" &&
+          weeksAhead === 1
+        ) {
+          await setSession(from, "ask_day", {
+            ...session.order,
+            weeksAhead: 0,
+          });
+
+          await sendDayPicker(from, 0);
 
           return res.sendStatus(200);
         }
