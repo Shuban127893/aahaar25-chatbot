@@ -548,16 +548,47 @@ function createWhatsAppRouter({
     return res.sendStatus(403);
   });
 
-  router.post("/webhook", async (req, res) => {
-    try {
-      const body = req.body;
+  /*
+  WhatsApp/Meta expects a fast HTTP 200
+  acknowledging receipt of a webhook event.
+  If it doesn't get one quickly enough, it
+  assumes delivery failed and automatically
+  retries - sometimes minutes later - sending
+  the exact same event again.
 
+  Because real processing here can be slow
+  (AI-generated replies, database lookups,
+  Square calls), this responds to Meta
+  IMMEDIATELY and does the actual work
+  afterward, in the background. Without this
+  split, a slow reply could trigger Meta to
+  redeliver the same customer message,
+  causing them to receive the same reply
+  multiple times without ever texting again.
+  */
+  router.post("/webhook", (req, res) => {
+    res.sendStatus(200);
+
+    processIncomingWhatsAppMessage(
+      req.body
+    ).catch((error) => {
+      console.error(
+        "WhatsApp webhook error:",
+        error
+      );
+    });
+  });
+
+  async function processIncomingWhatsAppMessage(
+    body
+  ) {
+    try {
       const message =
         body.entry?.[0]?.changes?.[0]?.value
           ?.messages?.[0];
 
       if (!message) {
-        return res.sendStatus(200);
+        return;
       }
 
       const from = message.from;
@@ -584,7 +615,7 @@ function createWhatsAppRouter({
             "Are you sure you want to cancel your in-progress order request?"
           );
 
-          return res.sendStatus(200);
+          return;
         }
 
         const recentOrder = await pool.query(
@@ -613,7 +644,7 @@ function createWhatsAppRouter({
             `Are you sure you want to cancel your order (Day: ${latest.day}, Stop: ${latest.stop})?`
           );
 
-          return res.sendStatus(200);
+          return;
         }
 
         /*
@@ -645,7 +676,7 @@ function createWhatsAppRouter({
             reply
           );
 
-          return res.sendStatus(200);
+          return;
         }
 
         const reply = await craftReply(
@@ -659,7 +690,7 @@ function createWhatsAppRouter({
           reply
         );
 
-        return res.sendStatus(200);
+        return;
       }
 
       if (session?.step === "confirm_cancel") {
@@ -680,7 +711,7 @@ function createWhatsAppRouter({
             "Sorry, I didn't catch that - please tap a button below."
           );
 
-          return res.sendStatus(200);
+          return;
         }
 
         if (
@@ -704,7 +735,7 @@ function createWhatsAppRouter({
             session.order.previousOrder
           );
 
-          return res.sendStatus(200);
+          return;
         }
 
         if (declined) {
@@ -715,7 +746,7 @@ function createWhatsAppRouter({
             "No problem, your order is unchanged."
           );
 
-          return res.sendStatus(200);
+          return;
         }
 
         /*
@@ -739,7 +770,7 @@ function createWhatsAppRouter({
             reply
           );
 
-          return res.sendStatus(200);
+          return;
         }
 
         if (
@@ -767,12 +798,12 @@ function createWhatsAppRouter({
             reply
           );
 
-          return res.sendStatus(200);
+          return;
         }
 
         await clearSession(from);
 
-        return res.sendStatus(200);
+        return;
       }
 
       if (
@@ -785,7 +816,7 @@ function createWhatsAppRouter({
         ])
       ) {
         await sendMainMenu(from);
-        return res.sendStatus(200);
+        return;
       }
 
       if (
@@ -810,7 +841,7 @@ function createWhatsAppRouter({
 
         await sendMainMenu(from);
 
-        return res.sendStatus(200);
+        return;
       }
 
       if (
@@ -869,7 +900,7 @@ function createWhatsAppRouter({
 
         await sendMainMenu(from);
 
-        return res.sendStatus(200);
+        return;
       }
 
       if (
@@ -885,7 +916,7 @@ function createWhatsAppRouter({
 
         await sendDayPicker(from, 0);
 
-        return res.sendStatus(200);
+        return;
       }
 
       if (session?.step === "ask_day") {
@@ -903,7 +934,7 @@ function createWhatsAppRouter({
 
           await sendDayPicker(from, 1);
 
-          return res.sendStatus(200);
+          return;
         }
 
         if (
@@ -917,7 +948,7 @@ function createWhatsAppRouter({
 
           await sendDayPicker(from, 0);
 
-          return res.sendStatus(200);
+          return;
         }
 
         let day = null;
@@ -941,7 +972,7 @@ function createWhatsAppRouter({
         ) {
           await sendDayPicker(from, weeksAhead);
 
-          return res.sendStatus(200);
+          return;
         }
 
         await setSession(from, "ask_stop", {
@@ -956,7 +987,7 @@ function createWhatsAppRouter({
           getStopsForDay(day)
         );
 
-        return res.sendStatus(200);
+        return;
       }
 
       if (session?.step === "ask_stop") {
@@ -984,7 +1015,7 @@ function createWhatsAppRouter({
             getStopsForDay(session.order.day)
           );
 
-          return res.sendStatus(200);
+          return;
         }
 
         await setSession(from, "ask_quantity", {
@@ -994,7 +1025,7 @@ function createWhatsAppRouter({
 
         await sendQuantityList(from);
 
-        return res.sendStatus(200);
+        return;
       }
 
       if (session?.step === "ask_quantity") {
@@ -1012,7 +1043,7 @@ function createWhatsAppRouter({
               "No problem - just type in the exact number of lunch boxes you'd like (up to 20)."
             );
 
-            return res.sendStatus(200);
+            return;
           }
 
           quantity = Number.parseInt(
@@ -1038,7 +1069,7 @@ function createWhatsAppRouter({
 
           await sendQuantityList(from);
 
-          return res.sendStatus(200);
+          return;
         }
 
         const unitPriceCents =
@@ -1066,7 +1097,7 @@ function createWhatsAppRouter({
             `Step 4 of 4:\nWhat name should we put on the order?`
         );
 
-        return res.sendStatus(200);
+        return;
       }
 
       if (session?.step === "ask_name") {
@@ -1081,7 +1112,7 @@ function createWhatsAppRouter({
             "Please enter a valid name for the order."
           );
 
-          return res.sendStatus(200);
+          return;
         }
 
         const unitPriceCents =
@@ -1197,7 +1228,7 @@ function createWhatsAppRouter({
             `After payment, your order should confirm automatically.`
         );
 
-        return res.sendStatus(200);
+        return;
       }
 
       if (
@@ -1226,7 +1257,7 @@ function createWhatsAppRouter({
 
         await sendMainMenu(from);
 
-        return res.sendStatus(200);
+        return;
       }
 
       if (hasWord(lower, "status")) {
@@ -1255,7 +1286,7 @@ function createWhatsAppRouter({
 
           await sendMainMenu(from);
 
-          return res.sendStatus(200);
+          return;
         }
 
         const latestOrder = result.rows[0];
@@ -1292,7 +1323,7 @@ function createWhatsAppRouter({
           reply
         );
 
-        return res.sendStatus(200);
+        return;
       }
 
       /*
@@ -1336,7 +1367,7 @@ function createWhatsAppRouter({
 
           await sendMainMenu(from);
 
-          return res.sendStatus(200);
+          return;
         }
       } catch (error) {
         console.error(
@@ -1347,16 +1378,14 @@ function createWhatsAppRouter({
 
       await sendMainMenu(from);
 
-      return res.sendStatus(200);
+      return;
     } catch (error) {
       console.error(
         "WhatsApp webhook error:",
         error
       );
-
-      return res.sendStatus(500);
     }
-  });
+  }
 
   return router;
 }
