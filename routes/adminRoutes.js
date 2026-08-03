@@ -3,6 +3,12 @@ const crypto = require("crypto");
 const rateLimit = require("express-rate-limit");
 
 const {
+  verify: verifyTotp,
+  generateSecret: generateTotpSecret,
+  generateURI: generateTotpURI,
+} = require("otplib");
+
+const {
   getTodayInfo,
 } = require("../utils/dateHelpers");
 
@@ -209,6 +215,48 @@ function createAdminRouter({
   const router = express.Router();
 
   /*
+  Writes one entry to the permanent security
+  audit log. Never allowed to break the
+  actual request it's logging - if writing
+  the log entry itself fails for some reason,
+  that failure is only logged to the console,
+  never surfaced to the person using the app.
+  */
+  async function logAuditEvent(
+    req,
+    action,
+    details = {}
+  ) {
+    try {
+      const ipAddress =
+        req.headers["x-forwarded-for"] ||
+        req.socket?.remoteAddress ||
+        null;
+
+      await pool.query(
+        `
+        INSERT INTO admin_audit_log (
+          action,
+          details,
+          ip_address
+        )
+        VALUES ($1, $2, $3)
+        `,
+        [
+          action,
+          JSON.stringify(details),
+          ipAddress,
+        ]
+      );
+    } catch (error) {
+      console.error(
+        "Audit log write failed:",
+        error.message
+      );
+    }
+  }
+
+  /*
   ADMIN_PASSWORD is for logging into the
   dashboard as a human.
 
@@ -277,12 +325,67 @@ function createAdminRouter({
           !ADMIN_PASSWORD ||
           password !== ADMIN_PASSWORD
         ) {
+          await logAuditEvent(
+            req,
+            "admin_login_failed",
+            { reason: "wrong_password" }
+          );
+
           return res.status(401).json({
             success: false,
 
             error:
               "Invalid admin password",
           });
+        }
+
+        /*
+        If ADMIN_TOTP_SECRET is set, a second
+        factor is required on top of the
+        password. If it's not set, 2FA is
+        simply not configured yet - login
+        works with just the password, exactly
+        as before.
+        */
+
+        if (process.env.ADMIN_TOTP_SECRET) {
+          const totpCode = String(
+            req.body.totpCode || ""
+          ).trim();
+
+          if (!totpCode) {
+            return res.status(401).json({
+              success: false,
+              requiresTotp: true,
+
+              error:
+                "Enter your 2FA code to continue",
+            });
+          }
+
+          const totpResult =
+            await verifyTotp({
+              secret:
+                process.env
+                  .ADMIN_TOTP_SECRET,
+              token: totpCode,
+            });
+
+          if (!totpResult.valid) {
+            await logAuditEvent(
+              req,
+              "admin_login_failed",
+              { reason: "wrong_totp" }
+            );
+
+            return res.status(401).json({
+              success: false,
+              requiresTotp: true,
+
+              error:
+                "Invalid 2FA code",
+            });
+          }
         }
 
         const token = crypto
@@ -308,6 +411,11 @@ function createAdminRouter({
           "admin_session",
           token,
           8 * 60 * 60
+        );
+
+        await logAuditEvent(
+          req,
+          "admin_login_success"
         );
 
         return res.json({
@@ -356,6 +464,11 @@ function createAdminRouter({
         clearCookie(
           res,
           "admin_session"
+        );
+
+        await logAuditEvent(
+          req,
+          "admin_logout"
         );
 
         return res.json({
@@ -595,6 +708,12 @@ function createAdminRouter({
           );
         }
 
+        await logAuditEvent(
+          req,
+          "order_confirmed_manually",
+          { orderId: order.order_id }
+        );
+
         return res.json({
           success: true,
           order,
@@ -714,6 +833,12 @@ function createAdminRouter({
             );
           }
 
+          await logAuditEvent(
+            req,
+            "order_cancelled_unpaid",
+            { orderId }
+          );
+
           return res.json({
             success: true,
             refunded: false,
@@ -794,6 +919,17 @@ function createAdminRouter({
               }`
           );
         }
+
+        await logAuditEvent(
+          req,
+          "order_refunded",
+          {
+            orderId,
+            amountCents:
+              payment.amount_money?.amount,
+            refundStatus,
+          }
+        );
 
         return res.json({
           success: true,
@@ -966,6 +1102,15 @@ function createAdminRouter({
             ]
           );
 
+        await logAuditEvent(
+          req,
+          "driver_added",
+          {
+            driverId: result.rows[0].id,
+            name,
+          }
+        );
+
         return res.json({
           success: true,
 
@@ -1058,6 +1203,12 @@ function createAdminRouter({
               "Driver not found",
           });
         }
+
+        await logAuditEvent(
+          req,
+          "driver_activated",
+          { driverId }
+        );
 
         return res.json({
           success: true,
@@ -1202,6 +1353,12 @@ function createAdminRouter({
 
           await client.query(
             "COMMIT"
+          );
+
+          await logAuditEvent(
+            req,
+            "driver_deactivated",
+            { driverId }
           );
 
           return res.json({
@@ -1394,6 +1551,15 @@ function createAdminRouter({
 
         await client.query(
           "COMMIT"
+        );
+
+        await logAuditEvent(
+          req,
+          "driver_deleted_permanently",
+          {
+            driverId: driver.id,
+            name: driver.name,
+          }
         );
 
         return res.json({
@@ -1752,6 +1918,12 @@ function createAdminRouter({
           ]
         );
 
+        await logAuditEvent(
+          req,
+          "assignment_saved",
+          { day, stop, driverId }
+        );
+
         return res.json({
           success: true,
 
@@ -1804,6 +1976,90 @@ function createAdminRouter({
 
           error:
             "Could not determine today's date.",
+        });
+      }
+    }
+  );
+
+  /*
+  Load recent security audit log entries -
+  logins, refunds, driver changes, business
+  data edits. Read-only, most recent first.
+  */
+
+  router.get(
+    "/admin/audit-log",
+    requireAdmin,
+    async (req, res) => {
+      try {
+        const result = await pool.query(
+          `
+          SELECT *
+          FROM admin_audit_log
+          ORDER BY created_at DESC
+          LIMIT 200
+          `
+        );
+
+        return res.json(result.rows);
+      } catch (error) {
+        console.error(
+          "Load audit log error:",
+          error.message
+        );
+
+        return res.status(500).json([]);
+      }
+    }
+  );
+
+  /*
+  Generates a brand new 2FA secret and its
+  QR-code URI, for setting up an authenticator
+  app (Google Authenticator, Authy, etc.).
+
+  This does NOT save or activate anything -
+  the app itself can't change its own Railway
+  environment variables. The admin has to
+  scan the QR / add the secret to their
+  authenticator app, then manually set
+  ADMIN_TOTP_SECRET in Railway to this same
+  value for 2FA to actually take effect.
+
+  Protected by requireAdmin, so this can only
+  be reached by someone who already knows the
+  current admin password.
+  */
+
+  router.get(
+    "/admin/setup-2fa-secret",
+    requireAdmin,
+    async (req, res) => {
+      try {
+        const secret = generateTotpSecret();
+
+        const uri = generateTotpURI({
+          secret,
+          issuer: "AAHAAR25 Admin",
+          label: "admin",
+        });
+
+        return res.json({
+          success: true,
+          secret,
+          uri,
+        });
+      } catch (error) {
+        console.error(
+          "Generate 2FA secret error:",
+          error.message
+        );
+
+        return res.status(500).json({
+          success: false,
+
+          error:
+            "Could not generate a 2FA secret",
         });
       }
     }
@@ -1941,6 +2197,11 @@ function createAdminRouter({
         await saveBusinessDataToDb(
           normalizedDelivery,
           normalizedMenu
+        );
+
+        await logAuditEvent(
+          req,
+          "business_data_saved"
         );
 
         return res.json({

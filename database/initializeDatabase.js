@@ -397,6 +397,34 @@ async function initializeDatabase() {
 
   /*
   ============================================================
+  ADMIN AUDIT LOG
+
+  A permanent, append-only record of
+  security-relevant actions - logins (both
+  successful and failed), refunds, driver
+  changes, business data edits. Kept
+  separate from ordinary server logs, which
+  are ephemeral and not meant for this.
+  ============================================================
+  */
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS admin_audit_log (
+      id BIGSERIAL PRIMARY KEY,
+      action TEXT NOT NULL,
+      details JSONB,
+      ip_address TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created
+    ON admin_audit_log(created_at DESC);
+  `);
+
+  /*
+  ============================================================
   CLEANUP EXPIRED AUTHENTICATION RECORDS
   ============================================================
   */

@@ -2086,6 +2086,25 @@
             </div>
           </div>
 
+          <div class="field-group" id="totpFieldGroup" style="display:none;">
+            <label class="field-label" for="adminTotpCode">
+              2FA code
+            </label>
+
+            <div class="input-shell">
+              <i class="fa-solid fa-shield-halved"></i>
+
+              <input
+                class="field"
+                id="adminTotpCode"
+                type="text"
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                placeholder="6-digit code from your authenticator app"
+              >
+            </div>
+          </div>
+
           <button
             id="adminLoginButton"
             class="btn full"
@@ -2980,6 +2999,67 @@
               </span>
             </article>
           </div>
+
+          <section class="panel" style="margin-top:17px;">
+            <div class="panel-header">
+              <div class="panel-title">
+                <div class="panel-icon">
+                  <i class="fa-solid fa-shield-halved"></i>
+                </div>
+
+                <div>
+                  <h2>Two-factor login (2FA)</h2>
+
+                  <p>
+                    Requires a 6-digit code from an authenticator app
+                    (Google Authenticator, Authy, etc.) in addition to
+                    your password.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <button
+              class="btn"
+              type="button"
+              onclick="generate2FASecret()"
+            >
+              <i class="fa-solid fa-qrcode"></i>
+              Generate a new 2FA secret
+            </button>
+
+            <div id="totpSetupResult" style="margin-top:14px;"></div>
+          </section>
+
+          <section class="panel" style="margin-top:17px;">
+            <div class="panel-header">
+              <div class="panel-title">
+                <div class="panel-icon">
+                  <i class="fa-solid fa-clipboard-list"></i>
+                </div>
+
+                <div>
+                  <h2>Security audit log</h2>
+
+                  <p>
+                    A permanent record of logins, refunds, driver
+                    changes, and business data edits.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                class="btn"
+                type="button"
+                onclick="loadAuditLog()"
+              >
+                <i class="fa-solid fa-rotate"></i>
+                Refresh
+              </button>
+            </div>
+
+            <div id="auditLogList"></div>
+          </section>
         </section>
       </main>
     </div>
@@ -3296,6 +3376,12 @@
       const passwordInput =
         document.getElementById("adminPassword");
 
+      const totpInput =
+        document.getElementById("adminTotpCode");
+
+      const totpFieldGroup =
+        document.getElementById("totpFieldGroup");
+
       const loginMessage =
         document.getElementById("loginMessage");
 
@@ -3314,19 +3400,45 @@
       setButtonLoading(loginButton, true, "Signing in");
 
       try {
-        await api("/admin/login", {
+        const response = await fetch("/admin/login", {
           method: "POST",
 
+          headers: {
+            "Content-Type": "application/json"
+          },
+
           body: JSON.stringify({
-            password
+            password,
+            totpCode: totpInput.value.trim()
           })
         });
 
-        passwordInput.value = "";
-        showApp();
-        await showTab("overview");
+        let data = {};
+
+        try {
+          data = await response.json();
+        } catch {
+          data = {};
+        }
+
+        if (response.ok && data.success) {
+          passwordInput.value = "";
+          totpInput.value = "";
+          showApp();
+          await showTab("overview");
+          return;
+        }
+
+        if (data.requiresTotp) {
+          totpFieldGroup.style.display = "block";
+          totpInput.focus();
+        }
+
+        loginMessage.textContent =
+          data.error || "Login failed.";
       } catch (error) {
-        loginMessage.textContent = error.message;
+        loginMessage.textContent =
+          "Could not reach the server. Please try again.";
       } finally {
         setButtonLoading(
           loginButton,
@@ -3424,7 +3536,8 @@
           drivers: loadDrivers,
           assignments: loadAssignments,
           activity: loadActivity,
-          business: loadBusinessData
+          business: loadBusinessData,
+          settings: loadAuditLog
         };
 
         if (loaders[state.activeTab]) {
@@ -4317,6 +4430,113 @@
       }
     }
 
+
+    async function generate2FASecret() {
+      const resultBox = document.getElementById(
+        "totpSetupResult"
+      );
+
+      resultBox.innerHTML =
+        `<p style="color:var(--muted); font-size:14px;">Generating...</p>`;
+
+      try {
+        const result = await api(
+          "/admin/setup-2fa-secret"
+        );
+
+        resultBox.innerHTML = `
+          <div class="security-row" style="flex-direction:column; align-items:flex-start; gap:10px;">
+            <p style="margin:0; font-weight:600;">
+              1. Add this to your authenticator app
+            </p>
+            <p style="margin:0; font-size:13px; color:var(--muted);">
+              Manual entry key (if your app can't scan a link):
+            </p>
+            <code style="background:var(--surface); padding:8px 12px; border-radius:8px; border:1px solid var(--border); word-break:break-all; font-size:13px;">
+              ${escapeHtml(result.secret)}
+            </code>
+
+            <p style="margin:12px 0 0; font-weight:600;">
+              2. Set this in Railway
+            </p>
+            <p style="margin:0; font-size:13px; color:var(--muted);">
+              Add an environment variable named <code>ADMIN_TOTP_SECRET</code> with this exact value:
+            </p>
+            <code style="background:var(--surface); padding:8px 12px; border-radius:8px; border:1px solid var(--border); word-break:break-all; font-size:13px;">
+              ${escapeHtml(result.secret)}
+            </code>
+
+            <p style="margin:12px 0 0; font-size:13px; color:var(--muted);">
+              Once that variable is set and the app redeploys, 2FA will be required on every login. This secret is not saved anywhere until you add it to Railway yourself.
+            </p>
+          </div>
+        `;
+      } catch (error) {
+        resultBox.innerHTML = errorBox(
+          error.message
+        );
+      }
+    }
+
+    async function loadAuditLog() {
+      const listBox = document.getElementById(
+        "auditLogList"
+      );
+
+      if (!listBox) {
+        return;
+      }
+
+      listBox.innerHTML = loadingMarkup();
+
+      try {
+        const events = await api(
+          "/admin/audit-log"
+        );
+
+        if (
+          !Array.isArray(events) ||
+          events.length === 0
+        ) {
+          listBox.innerHTML =
+            `<p style="color:var(--muted); font-size:14px;">No audit log entries yet.</p>`;
+
+          return;
+        }
+
+        listBox.innerHTML = events
+          .map((event) => {
+            const time = new Date(
+              event.created_at
+            ).toLocaleString();
+
+            const details =
+              event.details &&
+              Object.keys(event.details).length > 0
+                ? escapeHtml(
+                    JSON.stringify(event.details)
+                  )
+                : "";
+
+            return `
+              <div class="security-row">
+                <div>
+                  <strong>${escapeHtml(event.action)}</strong>
+                  <div style="font-size:12px; color:var(--muted);">
+                    ${time}${event.ip_address ? " · " + escapeHtml(event.ip_address) : ""}
+                  </div>
+                  ${details ? `<div style="font-size:12px; color:var(--muted); margin-top:4px;">${details}</div>` : ""}
+                </div>
+              </div>
+            `;
+          })
+          .join("");
+      } catch (error) {
+        listBox.innerHTML = errorBox(
+          error.message
+        );
+      }
+    }
 
     async function loadDrivers() {
       document.getElementById("driversGrid").innerHTML =
