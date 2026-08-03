@@ -6,6 +6,7 @@ const {
   sendDayList,
   sendStopList,
   sendQuantityList,
+  sendCancelConfirmation,
 } = require("../services/whatsappService");
 
 const {
@@ -262,6 +263,55 @@ function createWhatsAppRouter({
       withDates(thisWeekDays, 0),
       { showNextWeekOption: true }
     );
+  }
+
+  /*
+  Resends whatever prompt matches a given
+  order-flow step - used when a customer
+  declines cancelling an in-progress order,
+  so they land back exactly where they were
+  instead of being silently dropped.
+  */
+  async function resendPromptForStep(
+    from,
+    step,
+    order
+  ) {
+    if (step === "ask_day") {
+      await sendDayPicker(
+        from,
+        order?.weeksAhead || 0
+      );
+
+      return;
+    }
+
+    if (step === "ask_stop" && order?.day) {
+      await sendStopList(
+        from,
+        order.day,
+        getStopsForDay(order.day)
+      );
+
+      return;
+    }
+
+    if (step === "ask_quantity") {
+      await sendQuantityList(from);
+
+      return;
+    }
+
+    if (step === "ask_name") {
+      await sendWhatsAppMessage(
+        from,
+        "What name should we put on the order?"
+      );
+
+      return;
+    }
+
+    await sendMainMenu(from);
   }
 
   function getDaysWithStops() {
@@ -523,31 +573,19 @@ function createWhatsAppRouter({
 
       if (hasWord(lower, "cancel")) {
         if (session) {
-          await clearSession(from);
+          await setSession(from, "confirm_cancel", {
+            cancelIntent: "session",
+            previousStep: session.step,
+            previousOrder: session.order,
+          });
 
-          const reply = await craftReply(
-            userText,
-            `The customer's in-progress (not yet paid) order request has just been successfully cancelled/dropped.`,
-            "Your in-progress order request has been cancelled."
-          );
-
-          await sendWhatsAppMessage(
+          await sendCancelConfirmation(
             from,
-            reply
+            "Are you sure you want to cancel your in-progress order request?"
           );
 
           return res.sendStatus(200);
         }
-
-        /*
-        No in-progress order to drop. Check
-        for a real, already-placed order so
-        we never falsely tell a customer
-        their paid order was cancelled when
-        it wasn't - actually cancelling a
-        paid order requires a Square refund,
-        which only the restaurant can do.
-        */
 
         const recentOrder = await pool.query(
           `
@@ -562,34 +600,44 @@ function createWhatsAppRouter({
 
         const latest = recentOrder.rows[0];
 
-        const cancellableStatuses = [
-          "pending",
-          "confirmed",
-        ];
+        if (latest && latest.status === "pending") {
+          await setSession(from, "confirm_cancel", {
+            cancelIntent: "pending",
+            orderId: latest.order_id,
+            day: latest.day,
+            stop: latest.stop,
+          });
 
-        if (
-          latest &&
-          cancellableStatuses.includes(
-            latest.status
-          )
-        ) {
+          await sendCancelConfirmation(
+            from,
+            `Are you sure you want to cancel your order (Day: ${latest.day}, Stop: ${latest.stop})?`
+          );
+
+          return res.sendStatus(200);
+        }
+
+        /*
+        Paid orders are never cancelled
+        automatically - cancelling a paid
+        order means issuing a real refund,
+        which the restaurant handles directly
+        rather than through an automated
+        WhatsApp flow.
+        */
+
+        if (latest && latest.status === "confirmed") {
           const phone =
             getDeliveryInfo()?.phone ||
             "the restaurant";
 
-          const statusText =
-            latest.status === "confirmed"
-              ? "confirmed and paid"
-              : "placed, but payment hasn't gone through yet";
-
           const reply = await craftReply(
             userText,
             `The customer has no order currently in progress (nothing to drop). ` +
-              `However, they DO have a real, already-placed order: Day ${latest.day}, Stop ${latest.stop}, status: ${statusText}. ` +
-              `Cancelling or refunding an order that's already been placed requires calling the restaurant directly at ${phone} - this cannot be done automatically. ` +
+              `However, they DO have a real, already-placed order: Day ${latest.day}, Stop ${latest.stop}, status: confirmed and paid. ` +
+              `Cancelling a paid order requires a refund, which only the restaurant can issue by calling ${phone} - this cannot be done automatically. ` +
               `Tell the customer this clearly, without saying their order was cancelled (it was not).`,
-            `Your order (Day: ${latest.day}, Stop: ${latest.stop}) is ${statusText}.\n\n` +
-              `Since it's already been placed, please call us at ${phone} to cancel it or request a refund.`
+            `Your order (Day: ${latest.day}, Stop: ${latest.stop}) is confirmed and paid.\n\n` +
+              `Since it's already been paid for, please call us at ${phone} to cancel it and request a refund.`
           );
 
           await sendWhatsAppMessage(
@@ -610,6 +658,119 @@ function createWhatsAppRouter({
           from,
           reply
         );
+
+        return res.sendStatus(200);
+      }
+
+      if (session?.step === "confirm_cancel") {
+        const confirmed =
+          userText === "CONFIRM_CANCEL_YES" ||
+          hasWord(lower, "yes") ||
+          hasWord(lower, "yeah") ||
+          hasWord(lower, "yep");
+
+        const declined =
+          userText === "CONFIRM_CANCEL_NO" ||
+          hasWord(lower, "no") ||
+          hasWord(lower, "nope");
+
+        if (!confirmed && !declined) {
+          await sendCancelConfirmation(
+            from,
+            "Sorry, I didn't catch that - please tap a button below."
+          );
+
+          return res.sendStatus(200);
+        }
+
+        if (
+          declined &&
+          session.order.cancelIntent === "session"
+        ) {
+          await setSession(
+            from,
+            session.order.previousStep,
+            session.order.previousOrder
+          );
+
+          await sendWhatsAppMessage(
+            from,
+            "No problem, your order is still in progress."
+          );
+
+          await resendPromptForStep(
+            from,
+            session.order.previousStep,
+            session.order.previousOrder
+          );
+
+          return res.sendStatus(200);
+        }
+
+        if (declined) {
+          await clearSession(from);
+
+          await sendWhatsAppMessage(
+            from,
+            "No problem, your order is unchanged."
+          );
+
+          return res.sendStatus(200);
+        }
+
+        /*
+        Confirmed - actually perform the
+        cancellation the customer agreed to.
+        */
+
+        if (
+          session.order.cancelIntent === "session"
+        ) {
+          await clearSession(from);
+
+          const reply = await craftReply(
+            userText,
+            `The customer's in-progress (not yet paid) order request has just been successfully cancelled/dropped.`,
+            "Your in-progress order request has been cancelled."
+          );
+
+          await sendWhatsAppMessage(
+            from,
+            reply
+          );
+
+          return res.sendStatus(200);
+        }
+
+        if (
+          session.order.cancelIntent === "pending"
+        ) {
+          await pool.query(
+            `
+            UPDATE orders
+            SET status = 'cancelled'
+            WHERE order_id = $1
+            `,
+            [session.order.orderId]
+          );
+
+          await clearSession(from);
+
+          const reply = await craftReply(
+            userText,
+            `The customer's pending (unpaid) order for Day ${session.order.day}, Stop ${session.order.stop} has just been successfully cancelled. It was never paid for, so no refund is needed.`,
+            `Your order (Day: ${session.order.day}, Stop: ${session.order.stop}) has been cancelled.`
+          );
+
+          await sendWhatsAppMessage(
+            from,
+            reply
+          );
+
+          return res.sendStatus(200);
+        }
+
+        await clearSession(from);
 
         return res.sendStatus(200);
       }
