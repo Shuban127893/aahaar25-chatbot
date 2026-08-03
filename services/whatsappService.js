@@ -132,7 +132,11 @@ async function sendMainMenu(to) {
   });
 }
 
-async function sendDayList(to, days) {
+async function sendDayList(
+  to,
+  days,
+  { showNextWeekOption = false, weekLabel = null } = {}
+) {
   const dayList =
     Array.isArray(days) && days.length > 0
       ? days
@@ -146,6 +150,25 @@ async function sendDayList(to, days) {
   const firstName = dayList[0].name;
   const lastName =
     dayList[dayList.length - 1].name;
+
+  const rows = dayList
+    .slice(0, showNextWeekOption ? 9 : 10)
+    .map((day) => ({
+      id: `DAY_${day.name}`,
+      title: day.date
+        ? `${day.name}, ${day.date}`
+        : day.name,
+      description: `Order for ${day.name} delivery`,
+    }));
+
+  if (showNextWeekOption) {
+    rows.push({
+      id: "NEXT_WEEK",
+      title: "📅 Order for next week",
+      description:
+        "See next week's delivery days instead",
+    });
+  }
 
   return sendWhatsAppPayload({
     messaging_product: "whatsapp",
@@ -161,7 +184,9 @@ async function sendDayList(to, days) {
         text:
           "Great choice! 🍱\n\n" +
           "Step 1 of 4:\n" +
-          "Please choose your delivery day.",
+          (weekLabel
+            ? `Choose your delivery day for ${weekLabel}.`
+            : "Please choose your delivery day."),
       },
       footer: {
         text: `Available ${firstName}–${lastName}`,
@@ -170,16 +195,8 @@ async function sendDayList(to, days) {
         button: "Choose Day",
         sections: [
           {
-            title: "Delivery Days",
-            rows: dayList
-              .slice(0, 10)
-              .map((day) => ({
-                id: `DAY_${day.name}`,
-                title: day.date
-                  ? `${day.name}, ${day.date}`
-                  : day.name,
-                description: `Order for ${day.name} delivery`,
-              })),
+            title: weekLabel || "Delivery Days",
+            rows,
           },
         ],
       },

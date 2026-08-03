@@ -59,12 +59,124 @@ function getTodayInfo() {
 }
 
 /*
-Given a weekday name, returns the next real
-date (YYYY-MM-DD) that refers to - today,
+Parses a time string like "10:45 AM" into
+minutes since midnight, for comparing against
+the current time of day.
+*/
+function parseTimeToMinutes(timeText) {
+  const match = String(timeText || "")
+    .trim()
+    .match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+
+  if (!match) {
+    return null;
+  }
+
+  let hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const meridiem = match[3].toUpperCase();
+
+  if (meridiem === "PM" && hours !== 12) {
+    hours += 12;
+  }
+
+  if (meridiem === "AM" && hours === 12) {
+    hours = 0;
+  }
+
+  return hours * 60 + minutes;
+}
+
+/*
+Returns the current time of day, in minutes
+since midnight, in the restaurant's timezone.
+*/
+function getCurrentTimeMinutes() {
+  const parts = new Intl.DateTimeFormat(
+    "en-US",
+    {
+      timeZone: RESTAURANT_TIMEZONE,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }
+  ).formatToParts(new Date());
+
+  const map = {};
+
+  for (const part of parts) {
+    map[part.type] = part.value;
+  }
+
+  return (
+    Number(map.hour) * 60 + Number(map.minute)
+  );
+}
+
+/*
+True if a weekday is still orderable THIS
+week - i.e. it hasn't already happened this
+week, and if it's today, the same-day cutoff
+hasn't passed yet. Used to decide which days
+to even show as options, rather than showing
+a stale day and silently redirecting its date.
+*/
+function isOrderableThisWeek(
+  dayName,
+  cutoffTime
+) {
+  const today = getTodayInfo();
+
+  const todayIndex =
+    WEEKDAY_ORDER.indexOf(today.dayName);
+
+  const targetIndex =
+    WEEKDAY_ORDER.indexOf(dayName);
+
+  if (todayIndex === -1 || targetIndex === -1) {
+    return false;
+  }
+
+  const rawDaysAhead =
+    targetIndex - todayIndex;
+
+  if (rawDaysAhead < 0) {
+    // Already happened this week.
+    return false;
+  }
+
+  if (rawDaysAhead === 0 && cutoffTime) {
+    const cutoffMinutes =
+      parseTimeToMinutes(cutoffTime);
+
+    if (
+      cutoffMinutes !== null &&
+      getCurrentTimeMinutes() >=
+        cutoffMinutes
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/*
+Given a weekday name, returns the real date
+(YYYY-MM-DD) for its next occurrence - today,
 if today already is that weekday, otherwise
 the coming occurrence within the next week.
+
+weeksAhead adds whole extra weeks on top of
+that - weeksAhead=1 means "this same weekday,
+but next week" regardless of today's cutoff,
+since a week out is always far enough ahead
+to be orderable.
 */
-function getNextDateForDay(dayName) {
+function getNextDateForDay(
+  dayName,
+  weeksAhead = 0
+) {
   const today = getTodayInfo();
 
   const todayIndex =
@@ -82,6 +194,8 @@ function getNextDateForDay(dayName) {
   if (daysAhead < 0) {
     daysAhead += 7;
   }
+
+  daysAhead += weeksAhead * 7;
 
   const [year, month, day] = today.dateString
     .split("-")
@@ -155,5 +269,8 @@ module.exports = {
   WEEKDAY_ORDER,
   getTodayInfo,
   getNextDateForDay,
+  isOrderableThisWeek,
   formatDateForDisplay,
+  parseTimeToMinutes,
+  getCurrentTimeMinutes,
 };

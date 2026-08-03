@@ -10,6 +10,7 @@ const {
 
 const {
   getNextDateForDay,
+  isOrderableThisWeek,
   formatDateForDisplay,
 } = require("../utils/dateHelpers");
 
@@ -89,13 +90,61 @@ function createWhatsAppRouter({
     "Monday",
   ];
 
-  function withDates(dayNames) {
+  function withDates(dayNames, weeksAhead = 0) {
     return dayNames.map((name) => ({
       name,
       date: formatDateForDisplay(
-        getNextDateForDay(name)
+        getNextDateForDay(name, weeksAhead)
       ),
     }));
+  }
+
+  function getThisWeekOrderableDays() {
+    const cutoffTime =
+      getDeliveryInfo()?.sameDayCutoff;
+
+    return getDaysWithStops().filter((day) =>
+      isOrderableThisWeek(day, cutoffTime)
+    );
+  }
+
+  async function sendDayPicker(
+    from,
+    weeksAhead
+  ) {
+    if (weeksAhead === 1) {
+      await sendDayList(
+        from,
+        withDates(getDaysWithStops(), 1),
+        { weekLabel: "next week" }
+      );
+
+      return;
+    }
+
+    const thisWeekDays =
+      getThisWeekOrderableDays();
+
+    if (thisWeekDays.length === 0) {
+      await sendWhatsAppMessage(
+        from,
+        "No more delivery days available this week - here's next week's schedule instead:"
+      );
+
+      await sendDayList(
+        from,
+        withDates(getDaysWithStops(), 1),
+        { weekLabel: "next week" }
+      );
+
+      return;
+    }
+
+    await sendDayList(
+      from,
+      withDates(thisWeekDays, 0),
+      { showNextWeekOption: true }
+    );
   }
 
   function getDaysWithStops() {
@@ -543,15 +592,29 @@ function createWhatsAppRouter({
           status: "pending",
         });
 
-        await sendDayList(
-          from,
-          withDates(getDaysWithStops())
-        );
+        await sendDayPicker(from, 0);
 
         return res.sendStatus(200);
       }
 
       if (session?.step === "ask_day") {
+        const weeksAhead =
+          session.order.weeksAhead || 0;
+
+        if (
+          userText === "NEXT_WEEK" &&
+          weeksAhead === 0
+        ) {
+          await setSession(from, "ask_day", {
+            ...session.order,
+            weeksAhead: 1,
+          });
+
+          await sendDayPicker(from, 1);
+
+          return res.sendStatus(200);
+        }
+
         let day = null;
 
         if (userText.startsWith("DAY_")) {
@@ -560,14 +623,18 @@ function createWhatsAppRouter({
           day = normalizeDay(userText);
         }
 
+        const validDaysForThisSelection =
+          weeksAhead === 1
+            ? getDaysWithStops()
+            : getThisWeekOrderableDays();
+
         if (
           !day ||
-          !getDaysWithStops().includes(day)
+          !validDaysForThisSelection.includes(
+            day
+          )
         ) {
-          await sendDayList(
-            from,
-            withDates(getDaysWithStops())
-          );
+          await sendDayPicker(from, weeksAhead);
 
           return res.sendStatus(200);
         }
@@ -575,6 +642,7 @@ function createWhatsAppRouter({
         await setSession(from, "ask_stop", {
           ...session.order,
           day,
+          weeksAhead,
         });
 
         await sendStopList(
@@ -736,7 +804,8 @@ function createWhatsAppRouter({
 
           delivery_date:
             getNextDateForDay(
-              session.order.day
+              session.order.day,
+              session.order.weeksAhead || 0
             ),
         };
 
