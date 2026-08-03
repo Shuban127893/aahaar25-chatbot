@@ -348,7 +348,11 @@ function createAdminRouter({
         as before.
         */
 
-        if (process.env.ADMIN_TOTP_SECRET) {
+        const totpSecret = String(
+          process.env.ADMIN_TOTP_SECRET || ""
+        ).trim();
+
+        if (totpSecret) {
           const totpCode = String(
             req.body.totpCode || ""
           ).trim();
@@ -365,9 +369,7 @@ function createAdminRouter({
 
           const totpResult =
             await verifyTotp({
-              secret:
-                process.env
-                  .ADMIN_TOTP_SECRET,
+              secret: totpSecret,
               token: totpCode,
             });
 
