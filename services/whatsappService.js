@@ -132,6 +132,41 @@ async function sendMainMenu(to) {
   });
 }
 
+async function sendCancelConfirmation(
+  to,
+  message
+) {
+  return sendWhatsAppPayload({
+    messaging_product: "whatsapp",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: {
+        text: message,
+      },
+      action: {
+        buttons: [
+          {
+            type: "reply",
+            reply: {
+              id: "CONFIRM_CANCEL_YES",
+              title: "✅ Yes, cancel",
+            },
+          },
+          {
+            type: "reply",
+            reply: {
+              id: "CONFIRM_CANCEL_NO",
+              title: "❌ No, keep it",
+            },
+          },
+        ],
+      },
+    },
+  });
+}
+
 async function sendDayList(
   to,
   days,
@@ -371,6 +406,7 @@ module.exports = {
   sendDayList,
   sendStopList,
   sendQuantityList,
+  sendCancelConfirmation,
   sendDriverLoginCode,
   sendDriverInvite,
 };
