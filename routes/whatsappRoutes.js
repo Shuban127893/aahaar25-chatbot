@@ -90,6 +90,41 @@ function createWhatsAppRouter({
     "Monday",
   ];
 
+  const NUMBER_WORDS = {
+    one: 1,
+    two: 2,
+    three: 3,
+    four: 4,
+    five: 5,
+    six: 6,
+    seven: 7,
+    eight: 8,
+    nine: 9,
+    ten: 10,
+    eleven: 11,
+    twelve: 12,
+    thirteen: 13,
+    fourteen: 14,
+    fifteen: 15,
+    sixteen: 16,
+    seventeen: 17,
+    eighteen: 18,
+    nineteen: 19,
+    twenty: 20,
+  };
+
+  function parseQuantityText(text) {
+    const cleaned = String(text)
+      .trim()
+      .toLowerCase();
+
+    if (NUMBER_WORDS[cleaned] !== undefined) {
+      return NUMBER_WORDS[cleaned];
+    }
+
+    return Number.parseInt(cleaned, 10);
+  }
+
   function withDates(dayNames, weeksAhead = 0) {
     return dayNames.map((name) => ({
       name,
@@ -715,9 +750,8 @@ function createWhatsAppRouter({
             10
           );
         } else {
-          quantity = Number.parseInt(
-            userText.trim(),
-            10
+          quantity = parseQuantityText(
+            userText
           );
         }
 
@@ -729,7 +763,7 @@ function createWhatsAppRouter({
         if (!validQuantity) {
           await sendWhatsAppMessage(
             from,
-            "Please type just a number for how many lunch boxes you'd like (1-20)."
+            "Please reply with a number (like 5) or a written number (like \"five\") for how many lunch boxes you'd like (1-20)."
           );
 
           await sendQuantityList(from);
@@ -758,7 +792,7 @@ function createWhatsAppRouter({
 
         await sendWhatsAppMessage(
           from,
-          `${quantity} lunch box${quantity > 1 ? "es" : ""} at $${unitDisplay} each = $${totalDisplay} total.\n\n` +
+          `${quantity} lunch box${quantity > 1 ? "es" : ""} at $${unitDisplay} each = $${totalDisplay}, plus applicable taxes.\n\n` +
             `Step 4 of 4:\nWhat name should we put on the order?`
         );
 
