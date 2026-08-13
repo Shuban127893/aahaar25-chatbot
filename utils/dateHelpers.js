@@ -189,13 +189,35 @@ function getNextDateForDay(
     return null;
   }
 
-  let daysAhead = targetIndex - todayIndex;
+  let daysAhead;
 
-  if (daysAhead < 0) {
-    daysAhead += 7;
+  if (weeksAhead > 0) {
+    /*
+    Calendar-week-accurate: this calendar
+    week's occurrence of the day (which may
+    already be in the past, e.g. this week's
+    Tuesday when today is Wednesday) plus a
+    fixed number of full weeks.
+
+    This must NOT reuse the "nearest future
+    occurrence" wraparound below - a day that
+    already passed this week already jumps
+    forward via that wraparound, so stacking
+    +7 more on top of it overshoots by a full
+    week for exactly those days (e.g. asking
+    for "next week's Tuesday" would silently
+    return the Tuesday after that instead).
+    */
+    daysAhead =
+      targetIndex - todayIndex + weeksAhead * 7;
+  } else {
+    // Nearest upcoming occurrence, including today.
+    daysAhead = targetIndex - todayIndex;
+
+    if (daysAhead < 0) {
+      daysAhead += 7;
+    }
   }
-
-  daysAhead += weeksAhead * 7;
 
   const [year, month, day] = today.dateString
     .split("-")
