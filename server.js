@@ -217,6 +217,23 @@ app.use(
 
     standardHeaders: true,
     legacyHeaders: false,
+
+    /*
+    The WhatsApp webhook receives EVERY
+    customer's messages through one shared
+    endpoint - all from Meta's own servers,
+    not per-customer IPs. A limit sized for
+    general API abuse protection would apply
+    across all customers COMBINED, meaning a
+    busy period (many people ordering at
+    once, e.g. lunch rush) could silently
+    drop real customer messages with no
+    error shown to anyone. It gets its own,
+    much higher limit instead - see
+    whatsappRoutes.js.
+    */
+    skip: (req) =>
+      req.path === "/webhook",
   })
 );
 

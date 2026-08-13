@@ -1,4 +1,5 @@
 const express = require("express");
+const rateLimit = require("express-rate-limit");
 
 const {
   sendWhatsAppMessage,
@@ -566,7 +567,26 @@ function createWhatsAppRouter({
   causing them to receive the same reply
   multiple times without ever texting again.
   */
-  router.post("/webhook", (req, res) => {
+  /*
+  This endpoint receives EVERY customer's
+  messages combined, all arriving from Meta's
+  own servers rather than individual customer
+  IPs - so it needs a limit sized for real
+  combined traffic across a busy period (many
+  people ordering at once), not general
+  per-client API abuse protection. Still a
+  real ceiling against outright abuse, just
+  set high enough that legitimate traffic
+  during a rush can never be silently dropped.
+  */
+  const webhookLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 1000,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  router.post("/webhook", webhookLimiter, (req, res) => {
     res.sendStatus(200);
 
     processIncomingWhatsAppMessage(
