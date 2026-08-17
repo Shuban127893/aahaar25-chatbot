@@ -390,4 +390,5 @@ module.exports = {
   getSquarePayment,
   refundSquarePayment,
   getSquareConfiguration,
+  APP_BASE_URL,
 };

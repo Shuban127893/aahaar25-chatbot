@@ -1171,6 +1171,86 @@ function createDriverRouter({
     }
   );
 
+  /*
+  Reports the driver's current position -
+  called periodically from the driver
+  dashboard while they've opted in to
+  location sharing. Only ever stores the
+  MOST RECENT position per driver (upsert),
+  not a history log.
+  */
+
+  router.post(
+    "/driver/update-location",
+    requireDriver,
+    async (req, res) => {
+      try {
+        const latitude = Number(
+          req.body.latitude
+        );
+
+        const longitude = Number(
+          req.body.longitude
+        );
+
+        if (
+          !Number.isFinite(latitude) ||
+          !Number.isFinite(longitude) ||
+          latitude < -90 ||
+          latitude > 90 ||
+          longitude < -180 ||
+          longitude > 180
+        ) {
+          return res.status(400).json({
+            success: false,
+
+            error:
+              "Invalid coordinates.",
+          });
+        }
+
+        await pool.query(
+          `
+          INSERT INTO driver_locations (
+            driver_id,
+            latitude,
+            longitude,
+            updated_at
+          )
+          VALUES ($1, $2, $3, NOW())
+
+          ON CONFLICT (driver_id)
+          DO UPDATE SET
+            latitude = $2,
+            longitude = $3,
+            updated_at = NOW()
+          `,
+          [
+            req.driver.id,
+            latitude,
+            longitude,
+          ]
+        );
+
+        return res.json({
+          success: true,
+        });
+      } catch (error) {
+        console.error(
+          "Update location error:",
+          error.message
+        );
+
+        return res.status(500).json({
+          success: false,
+
+          error:
+            "Could not update location.",
+        });
+      }
+    }
+  );
+
   return router;
 }
 

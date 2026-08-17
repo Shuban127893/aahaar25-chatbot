@@ -17,6 +17,18 @@ const {
   normalizeMenuInfo,
 } = require("../utils/businessDataNormalization");
 
+const {
+  sendTrackingLink,
+} = require("../services/whatsappService");
+
+const {
+  APP_BASE_URL,
+} = require("../services/squareService");
+
+const {
+  buildTrackingToken,
+} = require("./trackingRoutes");
+
 /*
 Basic schema checks for the delivery and
 menu data an admin edits by hand.
@@ -211,6 +223,7 @@ function createAdminRouter({
   getDeliveryInfo,
   getMenuInfo,
   saveBusinessDataToDb,
+  otpSecret,
 }) {
   const router = express.Router();
 
@@ -705,9 +718,44 @@ function createAdminRouter({
               `Stop: ${
                 order.stop ||
                 "Not selected"
-              }\n\n` +
+              }\n` +
+              `Quantity: ${order.quantity || 1}\n` +
+              `Total: $${((order.total_price_cents || 1399) / 100).toFixed(2)}\n\n` +
               `You will receive delivery updates on WhatsApp.`
           );
+
+          try {
+            if (order.day && order.delivery_date) {
+              const dateString = new Date(
+                order.delivery_date
+              )
+                .toISOString()
+                .slice(0, 10);
+
+              const token = buildTrackingToken(
+                order.day,
+                dateString,
+                otpSecret
+              );
+
+              const trackingUrl =
+                `${APP_BASE_URL}/track?` +
+                `day=${encodeURIComponent(order.day)}` +
+                `&date=${encodeURIComponent(dateString)}` +
+                `&token=${token}`;
+
+              await sendTrackingLink(
+                order.phone,
+                trackingUrl,
+                order.day
+              );
+            }
+          } catch (error) {
+            console.error(
+              "Tracking link send failed (non-blocking):",
+              error.message
+            );
+          }
         }
 
         await logAuditEvent(

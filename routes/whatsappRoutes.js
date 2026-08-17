@@ -8,6 +8,7 @@ const {
   sendStopList,
   sendQuantityList,
   sendCancelConfirmation,
+  sendTrackingLink,
 } = require("../services/whatsappService");
 
 const {
@@ -15,6 +16,14 @@ const {
   isOrderableThisWeek,
   formatDateForDisplay,
 } = require("../utils/dateHelpers");
+
+const {
+  APP_BASE_URL,
+} = require("../services/squareService");
+
+const {
+  buildTrackingToken,
+} = require("./trackingRoutes");
 
 function createWhatsAppRouter({
   pool,
@@ -1276,6 +1285,74 @@ function createWhatsAppRouter({
         );
 
         await sendMainMenu(from);
+
+        return;
+      }
+
+      if (hasWord(lower, "track")) {
+        const result = await pool.query(
+          `
+          SELECT *
+          FROM orders
+          WHERE phone = $1
+          ORDER BY created_at DESC
+          LIMIT 1
+          `,
+          [from]
+        );
+
+        const latest = result.rows[0];
+
+        const trackableStatuses = [
+          "confirmed",
+          "delivered",
+        ];
+
+        if (
+          !latest ||
+          !trackableStatuses.includes(
+            latest.status
+          ) ||
+          !latest.day ||
+          !latest.delivery_date
+        ) {
+          const reply = await craftReply(
+            userText,
+            `The customer has no confirmed order right now that can be tracked. Only paid, confirmed orders can be tracked.`,
+            "You don't have a confirmed order to track right now."
+          );
+
+          await sendWhatsAppMessage(
+            from,
+            reply
+          );
+
+          return;
+        }
+
+        const dateString = new Date(
+          latest.delivery_date
+        )
+          .toISOString()
+          .slice(0, 10);
+
+        const token = buildTrackingToken(
+          latest.day,
+          dateString,
+          process.env.OTP_SECRET
+        );
+
+        const trackingUrl =
+          `${APP_BASE_URL}/track?` +
+          `day=${encodeURIComponent(latest.day)}` +
+          `&date=${encodeURIComponent(dateString)}` +
+          `&token=${token}`;
+
+        await sendTrackingLink(
+          from,
+          trackingUrl,
+          latest.day
+        );
 
         return;
       }

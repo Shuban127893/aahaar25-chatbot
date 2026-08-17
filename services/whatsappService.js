@@ -132,6 +132,35 @@ async function sendMainMenu(to) {
   });
 }
 
+async function sendTrackingLink(
+  to,
+  url,
+  dayLabel
+) {
+  return sendWhatsAppPayload({
+    messaging_product: "whatsapp",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "cta_url",
+      header: {
+        type: "text",
+        text: "🚚 Track Your Delivery",
+      },
+      body: {
+        text: `See your driver's live location for ${dayLabel}'s delivery.`,
+      },
+      action: {
+        name: "cta_url",
+        parameters: {
+          display_text: "Track Driver",
+          url,
+        },
+      },
+    },
+  });
+}
+
 async function sendCancelConfirmation(
   to,
   message
@@ -407,6 +436,7 @@ module.exports = {
   sendStopList,
   sendQuantityList,
   sendCancelConfirmation,
+  sendTrackingLink,
   sendDriverLoginCode,
   sendDriverInvite,
 };

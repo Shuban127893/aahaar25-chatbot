@@ -397,6 +397,28 @@ async function initializeDatabase() {
 
   /*
   ============================================================
+  DRIVER LOCATIONS
+
+  Only ever holds each driver's MOST RECENT
+  reported position (upserted, not a history
+  log) - this powers live tracking, not a
+  route history feature.
+  ============================================================
+  */
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS driver_locations (
+      driver_id INTEGER PRIMARY KEY
+        REFERENCES drivers(id)
+        ON DELETE CASCADE,
+      latitude DOUBLE PRECISION NOT NULL,
+      longitude DOUBLE PRECISION NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  /*
+  ============================================================
   ADMIN AUDIT LOG
 
   A permanent, append-only record of

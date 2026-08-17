@@ -4,11 +4,21 @@ const {
   verifySquareSignature,
   getSquareOrder,
   getSquareConfiguration,
+  APP_BASE_URL,
 } = require("../services/squareService");
+
+const {
+  sendTrackingLink,
+} = require("../services/whatsappService");
+
+const {
+  buildTrackingToken,
+} = require("./trackingRoutes");
 
 function createSquareRouter({
   pool,
   sendWhatsAppMessage,
+  otpSecret,
 }) {
   const router = express.Router();
 
@@ -311,7 +321,9 @@ function createSquareRouter({
             `✅ Your AAHAAR25 order has been automatically confirmed.\n\n` +
               `Name: ${confirmedOrder.name}\n` +
               `Day: ${confirmedOrder.day}\n` +
-              `Stop: ${confirmedOrder.stop}\n\n` +
+              `Stop: ${confirmedOrder.stop}\n` +
+              `Quantity: ${confirmedOrder.quantity || 1}\n` +
+              `Total: $${((confirmedOrder.total_price_cents || 1399) / 100).toFixed(2)}\n\n` +
               `You will receive delivery updates on WhatsApp.`
           );
 
@@ -325,6 +337,49 @@ function createSquareRouter({
               messageResult.status || null,
           }
         );
+
+        /*
+        Tracking link is best-effort - if it
+        fails for any reason, the customer
+        still has their real order confirmed
+        above, so this is never allowed to
+        block or fail the actual confirmation.
+        */
+        try {
+          if (
+            confirmedOrder.day &&
+            confirmedOrder.delivery_date
+          ) {
+            const dateString = new Date(
+              confirmedOrder.delivery_date
+            )
+              .toISOString()
+              .slice(0, 10);
+
+            const token = buildTrackingToken(
+              confirmedOrder.day,
+              dateString,
+              otpSecret
+            );
+
+            const trackingUrl =
+              `${APP_BASE_URL}/track?` +
+              `day=${encodeURIComponent(confirmedOrder.day)}` +
+              `&date=${encodeURIComponent(dateString)}` +
+              `&token=${token}`;
+
+            await sendTrackingLink(
+              confirmedOrder.phone,
+              trackingUrl,
+              confirmedOrder.day
+            );
+          }
+        } catch (error) {
+          console.error(
+            "Tracking link send failed (non-blocking):",
+            error.message
+          );
+        }
       }
 
       console.log(

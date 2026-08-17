@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Track Your Delivery | AAHAAR25</title>
+
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"
+  >
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css"
+  >
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap"
+    rel="stylesheet"
+  >
+
+  <style>
+    :root {
+      --surface: #ffffff;
+      --surface-soft: #fffaf2;
+      --orange-500: #f1841f;
+      --green-600: #1f8a4c;
+      --text: #352116;
+      --muted: #756558;
+      --border: #eadfce;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: 'DM Sans', sans-serif;
+      background: var(--surface-soft);
+      color: var(--text);
+    }
+
+    .header {
+      padding: 20px 20px 14px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .header h1 {
+      font-family: 'Manrope', sans-serif;
+      font-weight: 800;
+      font-size: 20px;
+      margin: 0 0 2px;
+    }
+
+    .header p {
+      margin: 0;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    #map {
+      height: 46vh;
+      width: 100%;
+    }
+
+    .panel {
+      padding: 16px 20px 40px;
+      max-width: 640px;
+      margin: 0 auto;
+    }
+
+    .status-banner {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      font-size: 14px;
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--green-600);
+      flex-shrink: 0;
+    }
+
+    .dot.stale {
+      background: #c97a2b;
+    }
+
+    .stop-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .stop-row:last-child {
+      border-bottom: none;
+    }
+
+    .stop-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 14px;
+    }
+
+    .stop-icon.delivered {
+      background: #e5f3ea;
+      color: var(--green-600);
+    }
+
+    .stop-icon.pending {
+      background: var(--surface-soft);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+
+    .stop-name {
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .stop-time {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .stop-status {
+      margin-left: auto;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: capitalize;
+    }
+
+    .stop-status.delivered { color: var(--green-600); }
+    .stop-status.pending { color: var(--muted); }
+
+    .error-box {
+      background: #fff0e8;
+      border: 1px solid #f4c98a;
+      border-radius: 12px;
+      padding: 16px;
+      font-size: 14px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🍱 AAHAAR25 Delivery Tracker</h1>
+    <p id="headerSubtitle">Loading today's route...</p>
+  </div>
+
+  <div id="map"></div>
+
+  <div class="panel">
+    <div id="statusBanner" class="status-banner">
+      <div class="dot"></div>
+      <span id="statusText">Checking driver location...</span>
+    </div>
+
+    <div id="stopsList"></div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const day = params.get("day") || "";
+    const date = params.get("date") || "";
+    const token = params.get("token") || "";
+
+    let map = null;
+    let driverMarkers = {};
+
+    function initMap() {
+      map = L.map("map").setView([35.2271, -80.8431], 13); // Charlotte, NC default
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "&copy; OpenStreetMap contributors",
+        maxZoom: 19
+      }).addTo(map);
+    }
+
+    const driverIcon = L.divIcon({
+      className: "",
+      html: '<div style="background:#f1841f;width:22px;height:22px;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>',
+      iconSize: [22, 22]
+    });
+
+    function timeAgo(isoString) {
+      const seconds = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
+      if (seconds < 60) return "just now";
+      const minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return `${minutes} min ago`;
+      return `${Math.floor(minutes / 60)} hr ago`;
+    }
+
+    function escapeHtml(value) {
+      const div = document.createElement("div");
+      div.textContent = String(value);
+      return div.innerHTML;
+    }
+
+    async function refresh() {
+      try {
+        const response = await fetch(
+          `/track-data?day=${encodeURIComponent(day)}&date=${encodeURIComponent(date)}&token=${encodeURIComponent(token)}`
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          document.querySelector(".panel").innerHTML =
+            `<div class="error-box">This tracking link isn't valid or has expired. Please check WhatsApp for a current link, or contact us at the restaurant.</div>`;
+          document.getElementById("headerSubtitle").textContent = "Link expired";
+          return;
+        }
+
+        document.getElementById("headerSubtitle").textContent = `${day}'s delivery route`;
+
+        const driversWithLocation = data.drivers.filter((d) => d.hasLocation);
+
+        const banner = document.getElementById("statusBanner");
+        const statusText = document.getElementById("statusText");
+        const dot = banner.querySelector(".dot");
+
+        if (driversWithLocation.length === 0) {
+          statusText.textContent = "Driver location isn't available yet - check back shortly.";
+          dot.classList.add("stale");
+        } else {
+          const mostRecent = driversWithLocation
+            .slice()
+            .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))[0];
+
+          const isStale =
+            Date.now() - new Date(mostRecent.updatedAt).getTime() > 5 * 60 * 1000;
+
+          dot.classList.toggle("stale", isStale);
+
+          statusText.textContent = isStale
+            ? `Last seen ${timeAgo(mostRecent.updatedAt)} - location may not be current`
+            : `Driver location updated ${timeAgo(mostRecent.updatedAt)}`;
+        }
+
+        if (map) {
+          const bounds = [];
+
+          driversWithLocation.forEach((driver) => {
+            const latLng = [driver.latitude, driver.longitude];
+            bounds.push(latLng);
+
+            if (driverMarkers[driver.id]) {
+              driverMarkers[driver.id].setLatLng(latLng);
+            } else {
+              driverMarkers[driver.id] = L.marker(latLng, { icon: driverIcon })
+                .addTo(map)
+                .bindPopup(escapeHtml(driver.name));
+            }
+          });
+
+          if (bounds.length > 0) {
+            map.fitBounds(bounds, { maxZoom: 14, padding: [40, 40] });
+          }
+        }
+
+        const stopsList = document.getElementById("stopsList");
+        stopsList.innerHTML = data.stops
+          .map((stop) => {
+            const delivered = stop.status === "delivered";
+
+            return `
+              <div class="stop-row">
+                <div class="stop-icon ${delivered ? "delivered" : "pending"}">
+                  <i class="fa-solid ${delivered ? "fa-check" : "fa-clock"}"></i>
+                </div>
+                <div>
+                  <div class="stop-name">${escapeHtml(stop.location)}</div>
+                  <div class="stop-time">${escapeHtml(stop.time)}</div>
+                </div>
+                <div class="stop-status ${delivered ? "delivered" : "pending"}">
+                  ${delivered ? "Delivered" : "Upcoming"}
+                </div>
+              </div>
+            `;
+          })
+          .join("");
+      } catch (error) {
+        document.getElementById("statusText").textContent =
+          "Couldn't load tracking data. Retrying...";
+      }
+    }
+
+    initMap();
+    refresh();
+    setInterval(refresh, 15000);
+  </script>
+</body>
+</html>

@@ -242,6 +242,13 @@
       box-shadow: none;
     }
 
+    .btn.small {
+      width: auto;
+      min-height: 40px;
+      margin-top: 0;
+      padding: 9px 14px;
+    }
+
     .hero {
       display: flex;
       align-items: flex-start;
@@ -344,6 +351,7 @@
       align-items: center;
       justify-content: space-between;
       gap: 12px;
+      flex-wrap: wrap;
     }
 
     .route-head strong {
@@ -530,6 +538,11 @@
       .stop-top {
         align-items: flex-start;
       }
+
+      .btn.small {
+        width: 100%;
+        margin-top: 10px;
+      }
     }
   </style>
 </head>
@@ -650,6 +663,33 @@
         </button>
       </section>
 
+      <section class="card" id="locationCard">
+        <div class="route-head">
+          <strong>
+            <i class="fa-solid fa-location-crosshairs"></i>
+            Live location sharing
+          </strong>
+
+          <button
+            class="btn ghost small"
+            id="locationToggleBtn"
+            type="button"
+            onclick="toggleLocationSharing()"
+          >
+            <i class="fa-solid fa-location-crosshairs"></i>
+            Share My Location
+          </button>
+        </div>
+
+        <p
+          id="locationStatusText"
+          class="sub"
+          style="margin-top: 10px; margin-bottom: 0;"
+        >
+          Off — customers won't see your location on the tracking map until you turn this on.
+        </p>
+      </section>
+
       <section class="card day-card">
         <div class="day-card-header">
           <h2>Select delivery day</h2>
@@ -745,6 +785,20 @@
     let selectedDay = getDefaultDeliveryDay();
     let driverAuthenticatedOnThisPage = false;
 
+    /*
+    Location sharing state. Deliberately NOT
+    started automatically - the driver has to
+    press the button themselves. Also
+    deliberately reset (never auto-resumed) on
+    every page load/login, matching the same
+    "start fresh each session" security posture
+    already used for the driver login itself.
+    */
+    let locationSharingActive = false;
+    let locationWatchId = null;
+    let lastLocationSentAt = 0;
+    const LOCATION_SEND_INTERVAL_MS = 15000;
+
     async function api(url, options = {}) {
       const response = await fetch(url, {
         ...options,
@@ -798,6 +852,8 @@
     function showLoginScreen() {
       driverAuthenticatedOnThisPage = false;
       routeData = null;
+
+      stopLocationSharing();
 
       document
         .getElementById("driverApp")
@@ -1241,8 +1297,174 @@
       }
     }
 
+    /*
+    Location sharing
+    */
+
+    function toggleLocationSharing() {
+      if (locationSharingActive) {
+        stopLocationSharing();
+      } else {
+        startLocationSharing();
+      }
+    }
+
+    function startLocationSharing() {
+      if (!driverAuthenticatedOnThisPage) {
+        return;
+      }
+
+      if (!("geolocation" in navigator)) {
+        setLocationStatus(
+          "Location isn't supported on this device or browser.",
+          true
+        );
+
+        return;
+      }
+
+      setLocationStatus("Turning on…");
+
+      locationWatchId =
+        navigator.geolocation.watchPosition(
+          onLocationUpdate,
+          onLocationError,
+          {
+            enableHighAccuracy: true,
+            maximumAge: 10000,
+            timeout: 20000
+          }
+        );
+
+      locationSharingActive = true;
+      updateLocationButton();
+    }
+
+    function stopLocationSharing() {
+      if (locationWatchId !== null) {
+        navigator.geolocation.clearWatch(
+          locationWatchId
+        );
+
+        locationWatchId = null;
+      }
+
+      locationSharingActive = false;
+      updateLocationButton();
+
+      setLocationStatus(
+        "Off — customers won't see your location on the tracking map until you turn this on."
+      );
+    }
+
+    async function onLocationUpdate(position) {
+      const now = Date.now();
+
+      // Throttle actual server updates - watchPosition
+      // can fire far more often than we need to report.
+      if (
+        now - lastLocationSentAt <
+        LOCATION_SEND_INTERVAL_MS
+      ) {
+        return;
+      }
+
+      lastLocationSentAt = now;
+
+      try {
+        await api("/driver/update-location", {
+          method: "POST",
+
+          body: JSON.stringify({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude
+          })
+        });
+
+        setLocationStatus(
+          `Sharing — last updated ${new Date().toLocaleTimeString()}`
+        );
+      } catch (error) {
+        setLocationStatus(
+          "Couldn't update your location: " +
+            error.message,
+          true
+        );
+      }
+    }
+
+    function onLocationError(error) {
+      let message =
+        "Couldn't access your location.";
+
+      if (
+        error.code === error.PERMISSION_DENIED
+      ) {
+        message =
+          "Location permission was denied — allow it in your browser's site settings to share your location.";
+      } else if (
+        error.code === error.POSITION_UNAVAILABLE
+      ) {
+        message =
+          "Location is currently unavailable.";
+      } else if (
+        error.code === error.TIMEOUT
+      ) {
+        message =
+          "Location request timed out. Retrying…";
+      }
+
+      setLocationStatus(message, true);
+    }
+
+    function setLocationStatus(
+      text,
+      isError = false
+    ) {
+      const element = document.getElementById(
+        "locationStatusText"
+      );
+
+      if (!element) {
+        return;
+      }
+
+      element.textContent = text;
+      element.className = isError ? "error" : "sub";
+      element.style.marginTop = "10px";
+      element.style.marginBottom = "0";
+    }
+
+    function updateLocationButton() {
+      const button = document.getElementById(
+        "locationToggleBtn"
+      );
+
+      if (!button) {
+        return;
+      }
+
+      if (locationSharingActive) {
+        button.className = "btn green small";
+
+        button.innerHTML = `
+          <i class="fa-solid fa-location-dot"></i>
+          Sharing Location
+        `;
+      } else {
+        button.className = "btn ghost small";
+
+        button.innerHTML = `
+          <i class="fa-solid fa-location-crosshairs"></i>
+          Share My Location
+        `;
+      }
+    }
+
     async function logout() {
       driverAuthenticatedOnThisPage = false;
+
+      stopLocationSharing();
 
       try {
         await fetch("/driver/logout", {

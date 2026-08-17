@@ -51,6 +51,11 @@ const createDriverRouter = require(
 );
 
 const {
+  createTrackingRouter,
+  buildTrackingToken,
+} = require("./routes/trackingRoutes");
+
+const {
   sendWhatsAppMessage,
 } = require(
   "./services/whatsappService"
@@ -97,6 +102,7 @@ app.use(
         scriptSrc: [
           "'self'",
           "'unsafe-inline'",
+          "https://cdnjs.cloudflare.com",
         ],
         scriptSrcAttr: [
           "'unsafe-inline'",
@@ -112,7 +118,11 @@ app.use(
           "https://cdnjs.cloudflare.com",
           "https://fonts.gstatic.com",
         ],
-        imgSrc: ["'self'", "data:"],
+        imgSrc: [
+          "'self'",
+          "data:",
+          "https://*.tile.openstreetmap.org",
+        ],
         connectSrc: ["'self'"],
         objectSrc: ["'none'"],
         frameAncestors: ["'none'"],
@@ -687,6 +697,7 @@ app.use(
   createSquareRouter({
     pool,
     sendWhatsAppMessage,
+    otpSecret: process.env.OTP_SECRET,
   })
 );
 
@@ -706,6 +717,7 @@ app.use(
     getDeliveryInfo: () => deliveryInfo,
     getMenuInfo: () => menuInfo,
     saveBusinessDataToDb,
+    otpSecret: process.env.OTP_SECRET,
   })
 );
 
@@ -724,6 +736,26 @@ app.use(
     getDeliveryInfo: () => deliveryInfo,
   })
 );
+
+/*
+Live driver tracking (public-facing, but
+each link is signed to one specific day -
+see routes/trackingRoutes.js)
+*/
+
+app.use(
+  createTrackingRouter({
+    pool,
+    getDeliveryInfo: () => deliveryInfo,
+    otpSecret: process.env.OTP_SECRET,
+  })
+);
+
+app.get("/track", (req, res) => {
+  return res.sendFile("track.html", {
+    root: "public",
+  });
+});
 
 /*
 Fallback 404 response
