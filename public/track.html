@@ -185,6 +185,7 @@
 
     let map = null;
     let driverMarkers = {};
+    let stopMarkers = {};
 
     function initMap() {
       map = L.map("map").setView([35.2271, -80.8431], 13); // Charlotte, NC default
@@ -199,6 +200,12 @@
       className: "",
       html: '<div style="background:#f1841f;width:22px;height:22px;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>',
       iconSize: [22, 22]
+    });
+
+    const stopIcon = L.divIcon({
+      className: "",
+      html: '<div style="background:#176b45;width:16px;height:16px;border-radius:4px;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.3);"></div>',
+      iconSize: [16, 16]
     });
 
     function timeAgo(isoString) {
@@ -256,9 +263,9 @@
             : `Driver location updated ${timeAgo(mostRecent.updatedAt)}`;
         }
 
-        if (map) {
-          const bounds = [];
+        let bounds = [];
 
+        if (map) {
           driversWithLocation.forEach((driver) => {
             const latLng = [driver.latitude, driver.longitude];
             bounds.push(latLng);
@@ -274,6 +281,40 @@
 
           if (bounds.length > 0) {
             map.fitBounds(bounds, { maxZoom: 14, padding: [40, 40] });
+          }
+
+          const stopBounds = [];
+
+          data.stops.forEach((stop) => {
+            if (
+              stop.latitude == null ||
+              stop.longitude == null
+            ) {
+              return;
+            }
+
+            const latLng = [
+              stop.latitude,
+              stop.longitude
+            ];
+
+            stopBounds.push(latLng);
+
+            if (stopMarkers[stop.location]) {
+              stopMarkers[stop.location].setLatLng(latLng);
+            } else {
+              stopMarkers[stop.location] = L.marker(latLng, { icon: stopIcon })
+                .addTo(map)
+                .bindPopup(
+                  `${escapeHtml(stop.location)}<br><small>${escapeHtml(stop.time)}</small>`
+                );
+            }
+          });
+
+          if (stopBounds.length > 0 && bounds.length === 0) {
+            // No driver location yet - at least
+            // center the map on the delivery stops.
+            map.fitBounds(stopBounds, { maxZoom: 14, padding: [40, 40] });
           }
         }
 

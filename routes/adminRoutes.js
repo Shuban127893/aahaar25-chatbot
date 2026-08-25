@@ -29,6 +29,10 @@ const {
   buildTrackingToken,
 } = require("./trackingRoutes");
 
+const {
+  geocodeStopsIfNeeded,
+} = require("../services/geocodingService");
+
 /*
 Basic schema checks for the delivery and
 menu data an admin edits by hand.
@@ -2159,6 +2163,15 @@ function createAdminRouter({
   anything is saved, so a typo can never
   break the live chatbot.
 
+  Any stop whose address is new or has
+  changed gets geocoded to latitude/longitude
+  before validation and save - this is what
+  lets the driver tracking map plot each
+  delivery stop, not just the driver's live
+  position. Stops with an unchanged address
+  keep their previously-saved coordinates
+  instead of being re-geocoded every save.
+
   Saved to the database (not just the
   filesystem), since Railway rebuilds this
   app's files from git on every deploy -
@@ -2219,6 +2232,31 @@ function createAdminRouter({
 
         const normalizedMenu =
           normalizeMenuInfo(parsedMenu);
+
+        /*
+        Geocode any stop whose address is new
+        or has changed, so driver tracking has
+        real coordinates to work with. Existing
+        coordinates are carried forward when an
+        address hasn't changed, so a normal save
+        doesn't re-hit the geocoding service for
+        every stop every time.
+        */
+        if (
+          Array.isArray(
+            normalizedDelivery.deliveryStops
+          )
+        ) {
+          const previousStops =
+            getDeliveryInfo()
+              ?.deliveryStops || [];
+
+          normalizedDelivery.deliveryStops =
+            await geocodeStopsIfNeeded(
+              normalizedDelivery.deliveryStops,
+              previousStops
+            );
+        }
 
         const deliveryValidationError =
           validateDeliveryInfo(

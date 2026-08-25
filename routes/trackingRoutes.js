@@ -82,9 +82,10 @@ function createTrackingRouter({
   Live tracking data for one day - the
   current position of every driver assigned
   to ANY stop that day, plus the day's stop
-  list and each stop's delivered/not-yet
-  status. Polled repeatedly by the public
-  tracking page.
+  list (including coordinates, so the map
+  can plot each stop) and each stop's
+  delivered/not-yet status. Polled
+  repeatedly by the public tracking page.
   */
 
   router.get(
@@ -184,6 +185,8 @@ function createTrackingRouter({
           stops: stops.map((s) => ({
             location: s.location,
             time: s.time,
+            latitude: s.latitude ?? null,
+            longitude: s.longitude ?? null,
 
             status:
               progressResult.rows.find(
