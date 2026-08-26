@@ -17,7 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
-    href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap"
+    href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@700;800;900&display=swap"
     rel="stylesheet"
   >
 
@@ -26,6 +26,7 @@
       --surface: #ffffff;
       --surface-soft: #fffaf2;
       --orange-500: #f1841f;
+      --orange-600: #e06a0d;
       --green-600: #1f8a4c;
       --text: #352116;
       --muted: #756558;
@@ -42,7 +43,7 @@
     }
 
     .header {
-      padding: 20px 20px 14px;
+      padding: 16px 20px 12px;
       border-bottom: 1px solid var(--border);
       background: var(--surface);
     }
@@ -50,20 +51,84 @@
     .header h1 {
       font-family: 'Manrope', sans-serif;
       font-weight: 800;
-      font-size: 20px;
-      margin: 0 0 2px;
+      font-size: 17px;
+      margin: 0;
     }
 
-    .header p {
-      margin: 0;
+    /*
+    The hero card is the whole point of this
+    redesign - one glance answers "where's my
+    food," the same way a transit app leads
+    with "bus arrives in 6 min" instead of a
+    list of stops.
+    */
+    .hero {
+      padding: 22px 20px 24px;
+      background: linear-gradient(135deg, var(--orange-600), var(--orange-500));
+      color: #ffffff;
+      text-align: center;
+    }
+
+    .hero-eyebrow {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      opacity: 0.85;
+      margin-bottom: 6px;
+    }
+
+    .hero-big {
+      font-family: 'Manrope', sans-serif;
+      font-weight: 900;
+      font-size: 40px;
+      line-height: 1.05;
+      margin-bottom: 4px;
+    }
+
+    .hero-big small {
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .hero-sub {
       font-size: 13px;
-      color: var(--muted);
+      opacity: 0.92;
+    }
+
+    .hero-sub strong {
+      font-weight: 700;
+    }
+
+    .hero.no-eta .hero-big {
+      font-size: 22px;
     }
 
     #map {
-      height: 46vh;
+      height: 44vh;
       width: 100%;
     }
+
+    /*
+    The default OpenStreetMap tile style is
+    built for cartographers - lots of colored
+    highway shields and minor-road lines that
+    just read as clutter to a customer glancing
+    at a delivery map. This filter mutes that
+    noise (desaturates the busy reds/oranges,
+    lightens the overall tile) without switching
+    tile providers or needing any new API key.
+    */
+    .leaflet-tile-pane {
+      filter: grayscale(0.45) brightness(1.08) contrast(0.9) saturate(0.85);
+    }
+
+    /*
+    Markers sit in a different pane than the
+    tiles, so this filter never touches the
+    driver dot or stop markers - only the
+    underlying map graphic gets muted.
+    */
 
     .panel {
       padding: 16px 20px 40px;
@@ -71,21 +136,18 @@
       margin: 0 auto;
     }
 
-    .status-banner {
+    .freshness {
       display: flex;
       align-items: center;
-      gap: 10px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 12px 16px;
-      margin-bottom: 16px;
-      font-size: 14px;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 14px;
     }
 
     .dot {
-      width: 9px;
-      height: 9px;
+      width: 8px;
+      height: 8px;
       border-radius: 50%;
       background: var(--green-600);
       flex-shrink: 0;
@@ -99,11 +161,19 @@
       display: flex;
       align-items: center;
       gap: 12px;
-      padding: 12px 0;
+      padding: 13px 0;
       border-bottom: 1px solid var(--border);
     }
 
     .stop-row:last-child {
+      border-bottom: none;
+    }
+
+    .stop-row.is-next {
+      background: #fff7ec;
+      margin: 0 -12px;
+      padding: 13px 12px;
+      border-radius: 12px;
       border-bottom: none;
     }
 
@@ -124,9 +194,15 @@
     }
 
     .stop-icon.pending {
-      background: var(--surface-soft);
+      background: var(--surface);
       color: var(--muted);
       border: 1px solid var(--border);
+    }
+
+    .stop-icon.next {
+      background: var(--orange-500);
+      color: #ffffff;
+      border: none;
     }
 
     .stop-name {
@@ -139,15 +215,25 @@
       color: var(--muted);
     }
 
-    .stop-status {
+    .stop-right {
       margin-left: auto;
-      font-size: 12px;
+      text-align: right;
+    }
+
+    .stop-eta {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--orange-600);
+    }
+
+    .stop-status {
+      font-size: 11px;
       font-weight: 600;
       text-transform: capitalize;
+      color: var(--muted);
     }
 
     .stop-status.delivered { color: var(--green-600); }
-    .stop-status.pending { color: var(--muted); }
 
     .error-box {
       background: #fff0e8;
@@ -162,15 +248,20 @@
 <body>
   <div class="header">
     <h1>🍱 AAHAAR25 Delivery Tracker</h1>
-    <p id="headerSubtitle">Loading today's route...</p>
+  </div>
+
+  <div id="hero" class="hero no-eta">
+    <div class="hero-eyebrow" id="heroEyebrow">Loading today's route...</div>
+    <div class="hero-big" id="heroBig">—</div>
+    <div class="hero-sub" id="heroSub"></div>
   </div>
 
   <div id="map"></div>
 
   <div class="panel">
-    <div id="statusBanner" class="status-banner">
-      <div class="dot"></div>
-      <span id="statusText">Checking driver location...</span>
+    <div class="freshness">
+      <div class="dot" id="freshnessDot"></div>
+      <span id="freshnessText">Checking driver location...</span>
     </div>
 
     <div id="stopsList"></div>
@@ -188,7 +279,7 @@
     let stopMarkers = {};
 
     function initMap() {
-      map = L.map("map").setView([35.2271, -80.8431], 13); // Charlotte, NC default
+      map = L.map("map", { zoomControl: true }).setView([35.2271, -80.8431], 13); // Charlotte, NC default
 
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "&copy; OpenStreetMap contributors",
@@ -198,14 +289,20 @@
 
     const driverIcon = L.divIcon({
       className: "",
-      html: '<div style="background:#f1841f;width:22px;height:22px;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>',
-      iconSize: [22, 22]
+      html: '<div style="background:#f1841f;width:24px;height:24px;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.35);"></div>',
+      iconSize: [24, 24]
     });
 
     const stopIcon = L.divIcon({
       className: "",
-      html: '<div style="background:#176b45;width:16px;height:16px;border-radius:4px;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.3);"></div>',
-      iconSize: [16, 16]
+      html: '<div style="background:#176b45;width:15px;height:15px;border-radius:4px;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.3);"></div>',
+      iconSize: [15, 15]
+    });
+
+    const nextStopIcon = L.divIcon({
+      className: "",
+      html: '<div style="background:#f1841f;width:19px;height:19px;border-radius:4px;border:2.5px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.35);"></div>',
+      iconSize: [19, 19]
     });
 
     function timeAgo(isoString) {
@@ -222,6 +319,47 @@
       return div.innerHTML;
     }
 
+    function renderHero(nextStop, driversWithLocation) {
+      const hero = document.getElementById("hero");
+      const eyebrow = document.getElementById("heroEyebrow");
+      const big = document.getElementById("heroBig");
+      const sub = document.getElementById("heroSub");
+
+      if (!nextStop) {
+        hero.classList.add("no-eta");
+        eyebrow.textContent = "All done";
+        big.textContent = "Delivered";
+        sub.textContent = "Every stop on today's route has been completed.";
+        return;
+      }
+
+      if (
+        nextStop.etaMinutes == null ||
+        driversWithLocation.length === 0
+      ) {
+        hero.classList.add("no-eta");
+        eyebrow.textContent = `Next stop: ${nextStop.location}`;
+        big.textContent = "Waiting for driver location";
+        sub.textContent = "This updates automatically once your driver shares their location.";
+        return;
+      }
+
+      hero.classList.remove("no-eta");
+      eyebrow.textContent = `Heading to ${nextStop.location}`;
+
+      big.innerHTML =
+        `${nextStop.etaMinutes} <small>min away</small>`;
+
+      const distanceText =
+        nextStop.distanceMiles != null
+          ? `${nextStop.distanceMiles} mi away`
+          : "";
+
+      sub.innerHTML =
+        `<strong>${escapeHtml(nextStop.driverName || "Your driver")}</strong>` +
+        (distanceText ? ` &middot; ${escapeHtml(distanceText)}` : "");
+    }
+
     async function refresh() {
       try {
         const response = await fetch(
@@ -233,21 +371,27 @@
         if (!response.ok || !data.success) {
           document.querySelector(".panel").innerHTML =
             `<div class="error-box">This tracking link isn't valid or has expired. Please check WhatsApp for a current link, or contact us at the restaurant.</div>`;
-          document.getElementById("headerSubtitle").textContent = "Link expired";
+          document.getElementById("hero").innerHTML =
+            `<div class="hero-eyebrow">Link expired</div>`;
           return;
         }
 
-        document.getElementById("headerSubtitle").textContent = `${day}'s delivery route`;
-
         const driversWithLocation = data.drivers.filter((d) => d.hasLocation);
 
-        const banner = document.getElementById("statusBanner");
-        const statusText = document.getElementById("statusText");
-        const dot = banner.querySelector(".dot");
+        // The next stop still awaiting delivery,
+        // in the order the route sends them.
+        const nextStop = data.stops.find(
+          (stop) => stop.status !== "delivered"
+        );
+
+        renderHero(nextStop, driversWithLocation);
+
+        const freshnessDot = document.getElementById("freshnessDot");
+        const freshnessText = document.getElementById("freshnessText");
 
         if (driversWithLocation.length === 0) {
-          statusText.textContent = "Driver location isn't available yet - check back shortly.";
-          dot.classList.add("stale");
+          freshnessText.textContent = "Driver location isn't available yet - check back shortly.";
+          freshnessDot.classList.add("stale");
         } else {
           const mostRecent = driversWithLocation
             .slice()
@@ -256,16 +400,16 @@
           const isStale =
             Date.now() - new Date(mostRecent.updatedAt).getTime() > 5 * 60 * 1000;
 
-          dot.classList.toggle("stale", isStale);
+          freshnessDot.classList.toggle("stale", isStale);
 
-          statusText.textContent = isStale
+          freshnessText.textContent = isStale
             ? `Last seen ${timeAgo(mostRecent.updatedAt)} - location may not be current`
             : `Driver location updated ${timeAgo(mostRecent.updatedAt)}`;
         }
 
-        let bounds = [];
-
         if (map) {
+          const bounds = [];
+
           driversWithLocation.forEach((driver) => {
             const latLng = [driver.latitude, driver.longitude];
             bounds.push(latLng);
@@ -279,10 +423,6 @@
             }
           });
 
-          if (bounds.length > 0) {
-            map.fitBounds(bounds, { maxZoom: 14, padding: [40, 40] });
-          }
-
           const stopBounds = [];
 
           data.stops.forEach((stop) => {
@@ -293,54 +433,87 @@
               return;
             }
 
-            const latLng = [
-              stop.latitude,
-              stop.longitude
-            ];
-
+            const latLng = [stop.latitude, stop.longitude];
             stopBounds.push(latLng);
+
+            const isNext =
+              nextStop && stop.location === nextStop.location;
+
+            const icon = isNext ? nextStopIcon : stopIcon;
+
+            const popupHtml =
+              `${escapeHtml(stop.location)}<br><small>${escapeHtml(stop.time)}</small>` +
+              (stop.etaMinutes != null
+                ? `<br><small>${stop.etaMinutes} min away</small>`
+                : "");
 
             if (stopMarkers[stop.location]) {
               stopMarkers[stop.location].setLatLng(latLng);
+              stopMarkers[stop.location].setIcon(icon);
+              stopMarkers[stop.location].setPopupContent(popupHtml);
             } else {
-              stopMarkers[stop.location] = L.marker(latLng, { icon: stopIcon })
+              stopMarkers[stop.location] = L.marker(latLng, { icon })
                 .addTo(map)
-                .bindPopup(
-                  `${escapeHtml(stop.location)}<br><small>${escapeHtml(stop.time)}</small>`
-                );
+                .bindPopup(popupHtml);
             }
           });
 
-          if (stopBounds.length > 0 && bounds.length === 0) {
-            // No driver location yet - at least
-            // center the map on the delivery stops.
-            map.fitBounds(stopBounds, { maxZoom: 14, padding: [40, 40] });
+          const allBounds = bounds.concat(stopBounds);
+
+          if (allBounds.length > 0) {
+            map.fitBounds(allBounds, { maxZoom: 14, padding: [40, 40] });
           }
         }
 
         const stopsList = document.getElementById("stopsList");
+
         stopsList.innerHTML = data.stops
           .map((stop) => {
             const delivered = stop.status === "delivered";
+            const isNext = nextStop && stop.location === nextStop.location;
+
+            const iconClass = delivered
+              ? "delivered"
+              : isNext
+                ? "next"
+                : "pending";
+
+            const iconGlyph = delivered
+              ? "fa-check"
+              : isNext
+                ? "fa-truck-fast"
+                : "fa-clock";
+
+            let rightHtml;
+
+            if (delivered) {
+              rightHtml = `<div class="stop-status delivered">Delivered</div>`;
+            } else if (stop.etaMinutes != null) {
+              rightHtml =
+                `<div class="stop-eta">${stop.etaMinutes} min</div>` +
+                `<div class="stop-status">${stop.distanceMiles != null ? stop.distanceMiles + " mi" : "Upcoming"}</div>`;
+            } else {
+              rightHtml = `<div class="stop-status">Upcoming</div>`;
+            }
 
             return `
-              <div class="stop-row">
-                <div class="stop-icon ${delivered ? "delivered" : "pending"}">
-                  <i class="fa-solid ${delivered ? "fa-check" : "fa-clock"}"></i>
+              <div class="stop-row ${isNext ? "is-next" : ""}">
+                <div class="stop-icon ${iconClass}">
+                  <i class="fa-solid ${iconGlyph}"></i>
                 </div>
                 <div>
                   <div class="stop-name">${escapeHtml(stop.location)}</div>
                   <div class="stop-time">${escapeHtml(stop.time)}</div>
                 </div>
-                <div class="stop-status ${delivered ? "delivered" : "pending"}">
-                  ${delivered ? "Delivered" : "Upcoming"}
+                <div class="stop-right">
+                  ${rightHtml}
                 </div>
               </div>
             `;
           })
           .join("");
       } catch (error) {
-        document.getElementById("statusText").textContent =
+        document.getElementById("freshnessText").textContent =
           "Couldn't load tracking data. Retrying...";
       }
     }
