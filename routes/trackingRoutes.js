@@ -1,6 +1,10 @@
 const express = require("express");
 const crypto = require("crypto");
 
+const {
+  getDrivingRoute,
+} = require("../services/routingService");
+
 /*
 Tracking links are signed rather than
 requiring a customer login - there's no
@@ -79,13 +83,20 @@ function createTrackingRouter({
   const router = express.Router();
 
   /*
-  Live tracking data for one day - the
-  current position of every driver assigned
-  to ANY stop that day, plus the day's stop
-  list (including coordinates, so the map
-  can plot each stop) and each stop's
-  delivered/not-yet status. Polled
-  repeatedly by the public tracking page.
+  Live tracking data for one day.
+
+  Returns:
+  - every driver assigned to ANY stop that
+    day, with their current position (for
+    map markers)
+  - every stop for that day, with its
+    coordinates, delivered/not-yet status,
+    and - when that stop's assigned driver
+    has a live location - a real road-based
+    ETA and distance to that specific stop
+
+  Polled repeatedly by the public tracking
+  page.
   */
 
   router.get(
@@ -118,12 +129,24 @@ function createTrackingRouter({
           });
         }
 
-        const driverResult =
+        /*
+        One row per (stop, assigned driver),
+        including that driver's current
+        location. This is what lets each stop
+        know exactly which driver is bringing
+        it, not just "some driver is out
+        today" - a customer's stop cares about
+        the driver assigned to THAT stop.
+        */
+        const assignmentResult =
           await pool.query(
             `
-            SELECT DISTINCT
-              drivers.id,
-              drivers.name,
+            SELECT
+              driver_assignments.stop,
+              drivers.id
+                AS driver_id,
+              drivers.name
+                AS driver_name,
               driver_locations.latitude,
               driver_locations.longitude,
               driver_locations.updated_at
@@ -165,13 +188,20 @@ function createTrackingRouter({
             (s) => s.day === day
           ) || [];
 
-        return res.json({
-          success: true,
+        /*
+        Unique drivers for the day, for map
+        markers - a driver can be assigned to
+        more than one stop, so this collapses
+        the assignment rows down to one entry
+        per driver.
+        */
+        const driversById = new Map();
 
-          drivers: driverResult.rows.map(
-            (row) => ({
-              id: row.id,
-              name: row.name,
+        for (const row of assignmentResult.rows) {
+          if (!driversById.has(row.driver_id)) {
+            driversById.set(row.driver_id, {
+              id: row.driver_id,
+              name: row.driver_name,
 
               hasLocation:
                 row.latitude !== null,
@@ -179,20 +209,131 @@ function createTrackingRouter({
               latitude: row.latitude,
               longitude: row.longitude,
               updatedAt: row.updated_at,
-            })
+            });
+          }
+        }
+
+        /*
+        For each stop, find its assigned
+        driver's row and - if both the stop
+        and the driver have real coordinates -
+        calculate a real road-based ETA and
+        distance. Any single failed routing
+        lookup is logged and skipped rather
+        than breaking the whole response.
+        */
+        const stopsWithEta = await Promise.all(
+          stops.map(async (stop) => {
+            const assignment =
+              assignmentResult.rows.find(
+                (row) => row.stop === stop.location
+              );
+
+            const status =
+              progressResult.rows.find(
+                (p) => p.stop === stop.location
+              )?.status || "not_started";
+
+            const base = {
+              location: stop.location,
+              time: stop.time,
+              latitude: stop.latitude ?? null,
+              longitude: stop.longitude ?? null,
+              status,
+
+              driverName:
+                assignment?.driver_name || null,
+
+              etaMinutes: null,
+              distanceMiles: null,
+              etaUnavailableReason: null,
+            };
+
+            if (status === "delivered") {
+              return base;
+            }
+
+            const hasAssignment =
+              Boolean(assignment);
+
+            const hasStopCoords =
+              stop.latitude != null &&
+              stop.longitude != null;
+
+            const hasDriverCoords =
+              assignment?.latitude != null &&
+              assignment?.longitude != null;
+
+            if (!hasAssignment) {
+              base.etaUnavailableReason =
+                "no_driver_assigned";
+
+              return base;
+            }
+
+            if (!hasStopCoords) {
+              base.etaUnavailableReason =
+                "stop_location_unknown";
+
+              return base;
+            }
+
+            if (!hasDriverCoords) {
+              base.etaUnavailableReason =
+                "driver_location_unknown";
+
+              return base;
+            }
+
+            try {
+              const route =
+                await getDrivingRoute(
+                  assignment.latitude,
+                  assignment.longitude,
+                  stop.latitude,
+                  stop.longitude
+                );
+
+              if (route) {
+                base.etaMinutes = Math.max(
+                  1,
+                  Math.round(
+                    route.durationSeconds / 60
+                  )
+                );
+
+                base.distanceMiles =
+                  Math.round(
+                    (route.distanceMeters /
+                      1609.34) *
+                      10
+                  ) / 10;
+              } else {
+                base.etaUnavailableReason =
+                  "route_not_found";
+              }
+            } catch (error) {
+              console.error(
+                `ETA calculation failed for "${stop.location}":`,
+                error.message
+              );
+
+              base.etaUnavailableReason =
+                "route_lookup_failed";
+            }
+
+            return base;
+          })
+        );
+
+        return res.json({
+          success: true,
+
+          drivers: Array.from(
+            driversById.values()
           ),
 
-          stops: stops.map((s) => ({
-            location: s.location,
-            time: s.time,
-            latitude: s.latitude ?? null,
-            longitude: s.longitude ?? null,
-
-            status:
-              progressResult.rows.find(
-                (p) => p.stop === s.location
-              )?.status || "not_started",
-          })),
+          stops: stopsWithEta,
         });
       } catch (error) {
         console.error(

@@ -339,8 +339,32 @@
       ) {
         hero.classList.add("no-eta");
         eyebrow.textContent = `Next stop: ${nextStop.location}`;
-        big.textContent = "Waiting for driver location";
-        sub.textContent = "This updates automatically once your driver shares their location.";
+
+        const reason = nextStop.etaUnavailableReason;
+
+        if (reason === "no_driver_assigned") {
+          big.textContent = "No driver assigned yet";
+          sub.textContent = "This stop hasn't been assigned to a driver yet.";
+        } else if (reason === "stop_location_unknown") {
+          big.textContent = "Setting up this stop";
+          sub.textContent = "This stop's location hasn't been added yet - check back shortly.";
+        } else if (reason === "driver_location_unknown") {
+          big.textContent = "Waiting for driver location";
+          sub.textContent = "This updates automatically once your driver shares their location.";
+        } else if (
+          reason === "route_not_found" ||
+          reason === "route_lookup_failed"
+        ) {
+          big.textContent = "Calculating arrival time";
+          sub.textContent = "This updates automatically - check back in a moment.";
+        } else if (driversWithLocation.length === 0) {
+          big.textContent = "Waiting for driver location";
+          sub.textContent = "This updates automatically once your driver shares their location.";
+        } else {
+          big.textContent = "Calculating arrival time";
+          sub.textContent = "This updates automatically as your driver gets closer.";
+        }
+
         return;
       }
 
