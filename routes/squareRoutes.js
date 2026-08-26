@@ -344,28 +344,24 @@ function createSquareRouter({
         still has their real order confirmed
         above, so this is never allowed to
         block or fail the actual confirmation.
+
+        Uses the order-scoped token (bound to
+        this specific order's ID), matching
+        the same format the admin manual-
+        confirm path sends - see trackingRoutes.js
+        for why this is bound per-order rather
+        than per day/date.
         */
         try {
-          if (
-            confirmedOrder.day &&
-            confirmedOrder.delivery_date
-          ) {
-            const dateString = new Date(
-              confirmedOrder.delivery_date
-            )
-              .toISOString()
-              .slice(0, 10);
-
+          if (confirmedOrder.order_id) {
             const token = buildTrackingToken(
-              confirmedOrder.day,
-              dateString,
+              confirmedOrder.order_id,
               otpSecret
             );
 
             const trackingUrl =
               `${APP_BASE_URL}/track?` +
-              `day=${encodeURIComponent(confirmedOrder.day)}` +
-              `&date=${encodeURIComponent(dateString)}` +
+              `order=${encodeURIComponent(confirmedOrder.order_id)}` +
               `&token=${token}`;
 
             await sendTrackingLink(
