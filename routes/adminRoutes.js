@@ -729,23 +729,15 @@ function createAdminRouter({
           );
 
           try {
-            if (order.day && order.delivery_date) {
-              const dateString = new Date(
-                order.delivery_date
-              )
-                .toISOString()
-                .slice(0, 10);
-
+            if (order.order_id) {
               const token = buildTrackingToken(
-                order.day,
-                dateString,
+                order.order_id,
                 otpSecret
               );
 
               const trackingUrl =
                 `${APP_BASE_URL}/track?` +
-                `day=${encodeURIComponent(order.day)}` +
-                `&date=${encodeURIComponent(dateString)}` +
+                `order=${encodeURIComponent(order.order_id)}` +
                 `&token=${token}`;
 
               await sendTrackingLink(

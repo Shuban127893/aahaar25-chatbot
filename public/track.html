@@ -169,7 +169,7 @@
       border-bottom: none;
     }
 
-    .stop-row.is-next {
+    .stop-row.is-mine {
       background: #fff7ec;
       margin: 0 -12px;
       padding: 13px 12px;
@@ -199,7 +199,7 @@
       border: 1px solid var(--border);
     }
 
-    .stop-icon.next {
+    .stop-icon.mine {
       background: var(--orange-500);
       color: #ffffff;
       border: none;
@@ -208,6 +208,18 @@
     .stop-name {
       font-weight: 600;
       font-size: 14px;
+    }
+
+    .stop-name .you-tag {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--orange-600);
+      background: #fff0d9;
+      padding: 2px 6px;
+      border-radius: 999px;
+      margin-left: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
     }
 
     .stop-time {
@@ -251,7 +263,7 @@
   </div>
 
   <div id="hero" class="hero no-eta">
-    <div class="hero-eyebrow" id="heroEyebrow">Loading today's route...</div>
+    <div class="hero-eyebrow" id="heroEyebrow">Loading your delivery...</div>
     <div class="hero-big" id="heroBig">—</div>
     <div class="hero-sub" id="heroSub"></div>
   </div>
@@ -270,8 +282,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script>
     const params = new URLSearchParams(window.location.search);
-    const day = params.get("day") || "";
-    const date = params.get("date") || "";
+    const orderId = params.get("order") || "";
     const token = params.get("token") || "";
 
     let map = null;
@@ -299,7 +310,7 @@
       iconSize: [15, 15]
     });
 
-    const nextStopIcon = L.divIcon({
+    const myStopIcon = L.divIcon({
       className: "",
       html: '<div style="background:#f1841f;width:19px;height:19px;border-radius:4px;border:2.5px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.35);"></div>',
       iconSize: [19, 19]
@@ -319,28 +330,33 @@
       return div.innerHTML;
     }
 
-    function renderHero(nextStop, driversWithLocation) {
+    function renderHero(myStop, driversWithLocation) {
       const hero = document.getElementById("hero");
       const eyebrow = document.getElementById("heroEyebrow");
       const big = document.getElementById("heroBig");
       const sub = document.getElementById("heroSub");
 
-      if (!nextStop) {
+      if (!myStop) {
         hero.classList.add("no-eta");
-        eyebrow.textContent = "All done";
-        big.textContent = "Delivered";
-        sub.textContent = "Every stop on today's route has been completed.";
+        eyebrow.textContent = "Delivery status";
+        big.textContent = "Unavailable";
+        sub.textContent = "We couldn't find your delivery stop for today.";
         return;
       }
 
-      if (
-        nextStop.etaMinutes == null ||
-        driversWithLocation.length === 0
-      ) {
+      if (myStop.status === "delivered") {
         hero.classList.add("no-eta");
-        eyebrow.textContent = `Next stop: ${nextStop.location}`;
+        eyebrow.textContent = myStop.location;
+        big.textContent = "Delivered";
+        sub.textContent = "Your lunch box has been delivered. Enjoy!";
+        return;
+      }
 
-        const reason = nextStop.etaUnavailableReason;
+      if (myStop.etaMinutes == null) {
+        hero.classList.add("no-eta");
+        eyebrow.textContent = `Your stop: ${myStop.location}`;
+
+        const reason = myStop.etaUnavailableReason;
 
         if (reason === "no_driver_assigned") {
           big.textContent = "No driver assigned yet";
@@ -351,43 +367,34 @@
         } else if (reason === "driver_location_unknown") {
           big.textContent = "Waiting for driver location";
           sub.textContent = "This updates automatically once your driver shares their location.";
-        } else if (
-          reason === "route_not_found" ||
-          reason === "route_lookup_failed"
-        ) {
-          big.textContent = "Calculating arrival time";
-          sub.textContent = "This updates automatically - check back in a moment.";
-        } else if (driversWithLocation.length === 0) {
-          big.textContent = "Waiting for driver location";
-          sub.textContent = "This updates automatically once your driver shares their location.";
         } else {
           big.textContent = "Calculating arrival time";
-          sub.textContent = "This updates automatically as your driver gets closer.";
+          sub.textContent = "This updates automatically - check back in a moment.";
         }
 
         return;
       }
 
       hero.classList.remove("no-eta");
-      eyebrow.textContent = `Heading to ${nextStop.location}`;
+      eyebrow.textContent = `Heading to ${myStop.location}`;
 
       big.innerHTML =
-        `${nextStop.etaMinutes} <small>min away</small>`;
+        `${myStop.etaMinutes} <small>min away</small>`;
 
       const distanceText =
-        nextStop.distanceMiles != null
-          ? `${nextStop.distanceMiles} mi away`
+        myStop.distanceMiles != null
+          ? `${myStop.distanceMiles} mi away`
           : "";
 
       sub.innerHTML =
-        `<strong>${escapeHtml(nextStop.driverName || "Your driver")}</strong>` +
+        `<strong>${escapeHtml(myStop.driverName || "Your driver")}</strong>` +
         (distanceText ? ` &middot; ${escapeHtml(distanceText)}` : "");
     }
 
     async function refresh() {
       try {
         const response = await fetch(
-          `/track-data?day=${encodeURIComponent(day)}&date=${encodeURIComponent(date)}&token=${encodeURIComponent(token)}`
+          `/track-data?order=${encodeURIComponent(orderId)}&token=${encodeURIComponent(token)}`
         );
 
         const data = await response.json();
@@ -402,13 +409,14 @@
 
         const driversWithLocation = data.drivers.filter((d) => d.hasLocation);
 
-        // The next stop still awaiting delivery,
-        // in the order the route sends them.
-        const nextStop = data.stops.find(
-          (stop) => stop.status !== "delivered"
+        // The stop that actually belongs to
+        // THIS customer's order, not just
+        // whichever stop is next overall.
+        const myStop = data.stops.find(
+          (stop) => stop.location === data.yourStop
         );
 
-        renderHero(nextStop, driversWithLocation);
+        renderHero(myStop, driversWithLocation);
 
         const freshnessDot = document.getElementById("freshnessDot");
         const freshnessText = document.getElementById("freshnessText");
@@ -460,10 +468,10 @@
             const latLng = [stop.latitude, stop.longitude];
             stopBounds.push(latLng);
 
-            const isNext =
-              nextStop && stop.location === nextStop.location;
+            const isMine =
+              myStop && stop.location === myStop.location;
 
-            const icon = isNext ? nextStopIcon : stopIcon;
+            const icon = isMine ? myStopIcon : stopIcon;
 
             const popupHtml =
               `${escapeHtml(stop.location)}<br><small>${escapeHtml(stop.time)}</small>` +
@@ -494,17 +502,17 @@
         stopsList.innerHTML = data.stops
           .map((stop) => {
             const delivered = stop.status === "delivered";
-            const isNext = nextStop && stop.location === nextStop.location;
+            const isMine = myStop && stop.location === myStop.location;
 
             const iconClass = delivered
               ? "delivered"
-              : isNext
-                ? "next"
+              : isMine
+                ? "mine"
                 : "pending";
 
             const iconGlyph = delivered
               ? "fa-check"
-              : isNext
+              : isMine
                 ? "fa-truck-fast"
                 : "fa-clock";
 
@@ -521,12 +529,12 @@
             }
 
             return `
-              <div class="stop-row ${isNext ? "is-next" : ""}">
+              <div class="stop-row ${isMine ? "is-mine" : ""}">
                 <div class="stop-icon ${iconClass}">
                   <i class="fa-solid ${iconGlyph}"></i>
                 </div>
                 <div>
-                  <div class="stop-name">${escapeHtml(stop.location)}</div>
+                  <div class="stop-name">${escapeHtml(stop.location)}${isMine ? '<span class="you-tag">Your stop</span>' : ""}</div>
                   <div class="stop-time">${escapeHtml(stop.time)}</div>
                 </div>
                 <div class="stop-right">

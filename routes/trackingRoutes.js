@@ -1,5 +1,6 @@
 const express = require("express");
 const crypto = require("crypto");
+const rateLimit = require("express-rate-limit");
 
 const {
   getDrivingRoute,
@@ -8,11 +9,25 @@ const {
 /*
 Tracking links are signed rather than
 requiring a customer login - there's no
-customer account system in this app. The
-signature ties a link to one specific real
-calendar day, so old links naturally stop
-working the next day without needing any
-cleanup or expiry table.
+customer account system in this app.
+
+The token is bound to a specific order's ID,
+not just a day/date. This matters for two
+reasons:
+
+1. Every customer gets a UNIQUE link. Before
+   this, the token only encoded day+date, so
+   every customer being delivered to on the
+   same day had the literal identical link -
+   any one of them forwarding or leaking it
+   exposed everyone else's link too.
+
+2. Access auto-revokes. Since /track-data
+   looks up the real order by its ID on every
+   request and checks it's still active, a
+   cancelled or refunded order's tracking
+   link simply stops working - no expiry
+   table or cleanup job needed.
 
 Reuses OTP_SECRET (already required and
 already a server-side-only secret) rather
@@ -22,29 +37,26 @@ requirements.
 */
 
 function buildTrackingToken(
-  day,
-  dateString,
+  orderId,
   secret
 ) {
   return crypto
     .createHmac("sha256", secret)
-    .update(`${day}:${dateString}`)
+    .update(String(orderId))
     .digest("hex");
 }
 
 function verifyTrackingToken(
-  day,
-  dateString,
+  orderId,
   token,
   secret
 ) {
-  if (!token) {
+  if (!token || !orderId) {
     return false;
   }
 
   const expected = buildTrackingToken(
-    day,
-    dateString,
+    orderId,
     secret
   );
 
@@ -75,6 +87,18 @@ function verifyTrackingToken(
   }
 }
 
+/*
+Orders in these statuses can still be
+tracked. A cancelled or refunded order has
+nothing left to deliver, so its link is
+treated as invalid rather than showing a
+stale route.
+*/
+const TRACKABLE_STATUSES = [
+  "confirmed",
+  "delivered",
+];
+
 function createTrackingRouter({
   pool,
   getDeliveryInfo,
@@ -83,40 +107,71 @@ function createTrackingRouter({
   const router = express.Router();
 
   /*
-  Live tracking data for one day.
+  Read-only, but still worth its own limit -
+  a tracking link could otherwise be polled
+  or brute-forced far more aggressively than
+  a normal customer's browser ever would.
+  The 15-second auto-refresh interval used
+  by the tracking page needs roughly 4
+  requests/minute per open tab; this leaves
+  generous headroom for a few family members
+  or tabs sharing the same network.
+  */
+  const trackDataLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+
+    message: {
+      success: false,
+
+      error:
+        "Too many requests. Please wait a few minutes and try again.",
+    },
+  });
+
+  /*
+  Live tracking data for one order.
+
+  Access requires knowing both the order's
+  ID and its signed token - the ID alone
+  isn't enough, and neither is a token
+  without the matching order. The day, stop,
+  and delivery date are all derived from the
+  real order record, never trusted from
+  client-supplied query params.
 
   Returns:
-  - every driver assigned to ANY stop that
-    day, with their current position (for
-    map markers)
+  - every driver assigned to a stop on that
+    order's delivery day, with their current
+    position (for map markers)
   - every stop for that day, with its
     coordinates, delivered/not-yet status,
     and - when that stop's assigned driver
     has a live location - a real road-based
-    ETA and distance to that specific stop
-
-  Polled repeatedly by the public tracking
-  page.
+    ETA and distance
+  - which of those stops is this customer's
+    own delivery, so the tracking page can
+    personalize its headline to THEIR stop
+    specifically, not just "whichever stop
+    hasn't been delivered yet today"
   */
 
   router.get(
     "/track-data",
+    trackDataLimiter,
     async (req, res) => {
       try {
-        const day = String(
-          req.query.day || ""
-        ).trim();
-
-        const dateString = String(
-          req.query.date || ""
+        const orderId = String(
+          req.query.order || ""
         ).trim();
 
         const token = req.query.token;
 
         if (
           !verifyTrackingToken(
-            day,
-            dateString,
+            orderId,
             token,
             otpSecret
           )
@@ -128,6 +183,52 @@ function createTrackingRouter({
               "Invalid or expired tracking link.",
           });
         }
+
+        const orderResult =
+          await pool.query(
+            `
+            SELECT
+              day,
+              stop,
+              status,
+              delivery_date
+
+            FROM orders
+
+            WHERE order_id = $1
+
+            LIMIT 1
+            `,
+            [orderId]
+          );
+
+        const order =
+          orderResult.rows[0];
+
+        /*
+        Deliberately the same generic error
+        for "no such order" and "order isn't
+        trackable right now" - distinguishing
+        them would let someone probe for
+        which order IDs exist.
+        */
+        if (
+          !order ||
+          !TRACKABLE_STATUSES.includes(
+            order.status
+          )
+        ) {
+          return res.status(403).json({
+            success: false,
+
+            error:
+              "Invalid or expired tracking link.",
+          });
+        }
+
+        const day = String(
+          order.day || ""
+        ).trim();
 
         /*
         One row per (stop, assigned driver),
@@ -219,8 +320,9 @@ function createTrackingRouter({
         and the driver have real coordinates -
         calculate a real road-based ETA and
         distance. Any single failed routing
-        lookup is logged and skipped rather
-        than breaking the whole response.
+        lookup is logged and reported via
+        etaUnavailableReason rather than
+        breaking the whole response.
         */
         const stopsWithEta = await Promise.all(
           stops.map(async (stop) => {
@@ -328,6 +430,12 @@ function createTrackingRouter({
 
         return res.json({
           success: true,
+
+          day,
+
+          yourStop: String(
+            order.stop || ""
+          ).trim(),
 
           drivers: Array.from(
             driversById.values()
