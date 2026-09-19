@@ -185,6 +185,46 @@ function createWhatsAppRouter({
       : null;
   }
 
+  /*
+  Same idea as fuzzyMatchNumberWord, made
+  reusable for day names and stop names too -
+  only auto-corrects when exactly one
+  candidate is a close, unambiguous match, so
+  a typo can't accidentally select the wrong
+  day or the wrong delivery stop.
+  */
+  function fuzzyMatchOneOf(word, candidates) {
+    const cleaned = word
+      .toLowerCase()
+      .replace(/[^a-z]/g, "");
+
+    if (cleaned.length < 4) {
+      return null;
+    }
+
+    const matches = candidates.filter(
+      (candidate) => {
+        const target = candidate
+          .toLowerCase()
+          .replace(/[^a-z]/g, "");
+
+        const maxDistance =
+          target.length <= 4 ? 1 : 2;
+
+        return (
+          levenshteinDistance(
+            cleaned,
+            target
+          ) <= maxDistance
+        );
+      }
+    );
+
+    return matches.length === 1
+      ? matches[0]
+      : null;
+  }
+
   function parseQuantityText(text) {
     const cleaned = String(text)
       .trim()
@@ -324,6 +364,110 @@ function createWhatsAppRouter({
     await sendMainMenu(from);
   }
 
+  /*
+  Everything that happens when a customer is
+  trying to cancel - pulled out into its own
+  function (previously this whole thing lived
+  inline in the "cancel" keyword check) so it
+  can also be reached from the day/stop/
+  quantity steps below when the customer's
+  wording didn't contain the word "cancel" at
+  all but clearly meant it (see
+  classifyUnmatchedInput below).
+  */
+  async function handleCancelRequest(
+    from,
+    session,
+    userText
+  ) {
+    if (session) {
+      await setSession(from, "confirm_cancel", {
+        cancelIntent: "session",
+        previousStep: session.step,
+        previousOrder: session.order,
+      });
+
+      await sendCancelConfirmation(
+        from,
+        "Are you sure you want to cancel your in-progress order request?"
+      );
+
+      return;
+    }
+
+    const recentOrder = await pool.query(
+      `
+      SELECT *
+      FROM orders
+      WHERE phone = $1
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [from]
+    );
+
+    const latest = recentOrder.rows[0];
+
+    if (latest && latest.status === "pending") {
+      await setSession(from, "confirm_cancel", {
+        cancelIntent: "pending",
+        orderId: latest.order_id,
+        day: latest.day,
+        stop: latest.stop,
+      });
+
+      await sendCancelConfirmation(
+        from,
+        `Are you sure you want to cancel your order (Day: ${latest.day}, Stop: ${latest.stop})?`
+      );
+
+      return;
+    }
+
+    /*
+    Paid orders are never cancelled
+    automatically - cancelling a paid
+    order means issuing a real refund,
+    which the restaurant handles directly
+    rather than through an automated
+    WhatsApp flow.
+    */
+
+    if (latest && latest.status === "confirmed") {
+      const phone =
+        getDeliveryInfo()?.phone ||
+        "the restaurant";
+
+      const reply = await craftReply(
+        userText,
+        `The customer has no order currently in progress (nothing to drop). ` +
+          `However, they DO have a real, already-placed order: Day ${latest.day}, Stop ${latest.stop}, status: confirmed and paid. ` +
+          `Cancelling a paid order requires a refund, which only the restaurant can issue by calling ${phone} - this cannot be done automatically. ` +
+          `Tell the customer this clearly, without saying their order was cancelled (it was not).`,
+        `Your order (Day: ${latest.day}, Stop: ${latest.stop}) is confirmed and paid.\n\n` +
+          `Since it's already been paid for, please call us at ${phone} to cancel it and request a refund.`
+      );
+
+      await sendWhatsAppMessage(
+        from,
+        reply
+      );
+
+      return;
+    }
+
+    const reply = await craftReply(
+      userText,
+      `The customer has no order in progress right now, and no recent placed order either. There is nothing to cancel.`,
+      "You don't have an order in progress right now."
+    );
+
+    await sendWhatsAppMessage(
+      from,
+      reply
+    );
+  }
+
   function getDaysWithStops() {
     const stops =
       getDeliveryInfo()?.deliveryStops || [];
@@ -358,11 +502,38 @@ function createWhatsAppRouter({
     const lower = text.toLowerCase();
     const days = getDaysWithStops();
 
-    return (
-      days.find((day) =>
-        lower.includes(day.toLowerCase())
-      ) || null
+    const exact = days.find((day) =>
+      lower.includes(day.toLowerCase())
     );
+
+    if (exact) {
+      return exact;
+    }
+
+    /*
+    Fuzzy fallback for typos like "wednessday"
+    or "thusday" - checks each word the
+    customer typed against each valid day name,
+    same edit-distance rule as quantities, and
+    only accepts it when exactly one day is a
+    close, unambiguous match.
+    */
+    const words = lower
+      .split(/\s+/)
+      .filter(Boolean);
+
+    for (const word of words) {
+      const fuzzy = fuzzyMatchOneOf(
+        word,
+        days
+      );
+
+      if (fuzzy) {
+        return fuzzy;
+      }
+    }
+
+    return null;
   }
 
   function normalizeStop(text = "", day) {
@@ -392,8 +563,53 @@ function createWhatsAppRouter({
       );
     });
 
-    return loose
-      ? String(loose.location).trim()
+    if (loose) {
+      return String(loose.location).trim();
+    }
+
+    /*
+    Fuzzy fallback for typos like "gatewy" ->
+    "Gateway Village" - compares each
+    significant word the customer typed against
+    each significant word in every stop's
+    location, same edit-distance rule as
+    fuzzyMatchOneOf. Only returns a match when
+    exactly one stop qualifies, since guessing
+    wrong here sends someone's order to the
+    wrong delivery location.
+    */
+    const inputWords = lower
+      .split(/\s+/)
+      .filter(
+        (word) => word.length > 3
+      );
+
+    const fuzzyMatches = stops.filter(
+      (stop) => {
+        const stopWords = stop.location
+          .toLowerCase()
+          .split(/\s+/)
+          .filter(
+            (word) => word.length > 3
+          );
+
+        return inputWords.some(
+          (inputWord) =>
+            stopWords.some(
+              (stopWord) =>
+                fuzzyMatchOneOf(
+                  inputWord,
+                  [stopWord]
+                ) !== null
+            )
+        );
+      }
+    );
+
+    return fuzzyMatches.length === 1
+      ? String(
+          fuzzyMatches[0].location
+        ).trim()
       : null;
   }
 
@@ -509,6 +725,198 @@ function createWhatsAppRouter({
     return words.some((word) =>
       hasWord(text, word)
     );
+  }
+
+  /*
+  Catches typos of "cancel" the same way
+  fuzzyMatchNumberWord already catches typos
+  of number words ("fiev" -> "five") - checks
+  each word in the message against "cancel"
+  by edit distance, not just an exact whole-
+  word match. This is what makes "cance",
+  "cancle", "canel" etc. register as a real
+  cancel attempt instead of silently falling
+  through to whatever step the customer is on.
+  */
+  function hasCancelIntent(text) {
+    if (
+      hasAnyWord(text, [
+        "cancel",
+        "stop",
+        "nevermind",
+      ])
+    ) {
+      return true;
+    }
+
+    return text
+      .split(/\s+/)
+      .map((word) =>
+        word.replace(/[^a-z]/gi, "")
+      )
+      .some(
+        (word) =>
+          word.length >= 4 &&
+          levenshteinDistance(
+            word,
+            "cancel"
+          ) <= 2
+      );
+  }
+
+  /*
+  Guards the "start a new order" keyword
+  match below against negation - without
+  this, "I don't want to order anymore"
+  matches the word "order" just as much as
+  "I'd like to order" does, and the bot would
+  start a brand-new order in response to a
+  customer trying to back out of one.
+  */
+  function isNegated(text) {
+    return /\b(don'?t|dont|doesn'?t|didn'?t|not|never|no longer|nevermind|never mind)\b/i.test(
+      text
+    );
+  }
+
+  /*
+  Last-resort check for when a customer's
+  message didn't cleanly match (even after
+  fuzzy-matching) the day, stop, or quantity
+  we were expecting. Rather than assume it's
+  just noise and silently repeat the last
+  prompt (which is what this bot used to do,
+  and reads to a customer like it's being
+  ignored), this asks Claude what kind of
+  thing the message actually is:
+
+  - CANCEL: trying to cancel/back out/decline,
+    phrased in a way no fixed keyword list or
+    typo-distance check could anticipate -
+    "nah forget it", "not interested anymore",
+    "I changed my mind".
+  - QUESTION: asking something else entirely -
+    price, delivery, policy, anything - even
+    if it's misspelled or off-hand. This
+    customer should get a real answer, not
+    just be told to try again.
+  - OTHER: genuinely unclear - a garbled
+    attempt at the actual answer, random text,
+    etc. This is the only case where repeating
+    the prompt is still the right call.
+
+  Always resolves to "OTHER" (never blocks or
+  throws) if the AI call fails for any reason,
+  which just means the customer sees today's
+  original fallback behavior - the prompt
+  repeats - not a broken bot.
+  */
+  async function classifyUnmatchedInput(
+    userText
+  ) {
+    const validLabels = [
+      "CANCEL",
+      "QUESTION",
+      "OTHER",
+    ];
+
+    try {
+      const response =
+        await client.messages.create({
+          model:
+            "claude-haiku-4-5-20251001",
+          max_tokens: 10,
+
+          system:
+            `A customer of a WhatsApp lunch-ordering bot just sent a message that didn't answer what was expected next in their order. Classify it as exactly one word:\n\n` +
+            `CANCEL - they're trying to cancel, stop, or back out, in any phrasing (including "forget it", "never mind", "not interested anymore", "changed my mind", or a misspelling of "cancel").\n` +
+            `QUESTION - they're asking something else entirely (price, delivery times, policy, order status, or anything unrelated) - even if it's misspelled or oddly phrased.\n` +
+            `OTHER - anything else, e.g. a garbled or unrecognizable attempt to answer the actual question they were asked.\n\n` +
+            `Respond with ONLY one of: ${validLabels.join(", ")}.`,
+
+          messages: [
+            {
+              role: "user",
+              content: userText,
+            },
+          ],
+        });
+
+      const label = response.content
+        .filter(
+          (block) => block.type === "text"
+        )
+        .map((block) => block.text)
+        .join("")
+        .trim()
+        .toUpperCase();
+
+      return validLabels.includes(label)
+        ? label
+        : "OTHER";
+    } catch (error) {
+      console.error(
+        "classifyUnmatchedInput error:",
+        error.message
+      );
+
+      return "OTHER";
+    }
+  }
+
+  /*
+  Answers a genuine off-topic question using
+  the same general-purpose AI fallback as the
+  very bottom of this function, but without
+  also showing the main menu afterward - used
+  when a customer asks something unrelated in
+  the middle of picking a day/stop/quantity,
+  so they get a real answer AND land back
+  where they were instead of being dropped
+  into the main menu mid-order.
+  */
+  async function answerFreeformQuestion(
+    from,
+    userText
+  ) {
+    try {
+      const aiResponse =
+        await client.messages.create({
+          model:
+            "claude-haiku-4-5-20251001",
+          max_tokens: 300,
+          system: buildSystemPrompt(),
+          messages: [
+            {
+              role: "user",
+              content: userText,
+            },
+          ],
+        });
+
+      const aiReply = aiResponse.content
+        .filter(
+          (block) => block.type === "text"
+        )
+        .map((block) => block.text)
+        .join("\n");
+
+      await sendWhatsAppMessage(
+        from,
+        aiReply ||
+          "Sorry, I'm not sure about that - please call us directly with questions."
+      );
+    } catch (error) {
+      console.error(
+        "answerFreeformQuestion error:",
+        error.message
+      );
+
+      await sendWhatsAppMessage(
+        from,
+        "Sorry, I'm not sure about that - please call us directly with questions."
+      );
+    }
   }
 
   function getIncomingText(message) {
@@ -631,92 +1039,11 @@ function createWhatsAppRouter({
 
       let session = await getSession(from);
 
-      if (hasWord(lower, "cancel")) {
-        if (session) {
-          await setSession(from, "confirm_cancel", {
-            cancelIntent: "session",
-            previousStep: session.step,
-            previousOrder: session.order,
-          });
-
-          await sendCancelConfirmation(
-            from,
-            "Are you sure you want to cancel your in-progress order request?"
-          );
-
-          return;
-        }
-
-        const recentOrder = await pool.query(
-          `
-          SELECT *
-          FROM orders
-          WHERE phone = $1
-          ORDER BY created_at DESC
-          LIMIT 1
-          `,
-          [from]
-        );
-
-        const latest = recentOrder.rows[0];
-
-        if (latest && latest.status === "pending") {
-          await setSession(from, "confirm_cancel", {
-            cancelIntent: "pending",
-            orderId: latest.order_id,
-            day: latest.day,
-            stop: latest.stop,
-          });
-
-          await sendCancelConfirmation(
-            from,
-            `Are you sure you want to cancel your order (Day: ${latest.day}, Stop: ${latest.stop})?`
-          );
-
-          return;
-        }
-
-        /*
-        Paid orders are never cancelled
-        automatically - cancelling a paid
-        order means issuing a real refund,
-        which the restaurant handles directly
-        rather than through an automated
-        WhatsApp flow.
-        */
-
-        if (latest && latest.status === "confirmed") {
-          const phone =
-            getDeliveryInfo()?.phone ||
-            "the restaurant";
-
-          const reply = await craftReply(
-            userText,
-            `The customer has no order currently in progress (nothing to drop). ` +
-              `However, they DO have a real, already-placed order: Day ${latest.day}, Stop ${latest.stop}, status: confirmed and paid. ` +
-              `Cancelling a paid order requires a refund, which only the restaurant can issue by calling ${phone} - this cannot be done automatically. ` +
-              `Tell the customer this clearly, without saying their order was cancelled (it was not).`,
-            `Your order (Day: ${latest.day}, Stop: ${latest.stop}) is confirmed and paid.\n\n` +
-              `Since it's already been paid for, please call us at ${phone} to cancel it and request a refund.`
-          );
-
-          await sendWhatsAppMessage(
-            from,
-            reply
-          );
-
-          return;
-        }
-
-        const reply = await craftReply(
-          userText,
-          `The customer has no order in progress right now, and no recent placed order either. There is nothing to cancel.`,
-          "You don't have an order in progress right now."
-        );
-
-        await sendWhatsAppMessage(
+      if (hasCancelIntent(lower)) {
+        await handleCancelRequest(
           from,
-          reply
+          session,
+          userText
         );
 
         return;
@@ -935,6 +1262,7 @@ function createWhatsAppRouter({
       if (
         userText === "START_ORDER" ||
         (!isQuestion(userText) &&
+          !isNegated(userText) &&
           (hasWord(lower, "order") ||
             lower.includes("lunch box")))
       ) {
@@ -999,6 +1327,40 @@ function createWhatsAppRouter({
             day
           )
         ) {
+          const classification =
+            await classifyUnmatchedInput(
+              userText
+            );
+
+          if (classification === "CANCEL") {
+            await handleCancelRequest(
+              from,
+              session,
+              userText
+            );
+
+            return;
+          }
+
+          if (classification === "QUESTION") {
+            await answerFreeformQuestion(
+              from,
+              userText
+            );
+
+            await sendDayPicker(
+              from,
+              weeksAhead
+            );
+
+            return;
+          }
+
+          await sendWhatsAppMessage(
+            from,
+            "Sorry, I didn't catch a valid day in that - here are the options again:"
+          );
+
           await sendDayPicker(from, weeksAhead);
 
           return;
@@ -1038,6 +1400,43 @@ function createWhatsAppRouter({
         );
 
         if (!stop || !validStop) {
+          const classification =
+            await classifyUnmatchedInput(
+              userText
+            );
+
+          if (classification === "CANCEL") {
+            await handleCancelRequest(
+              from,
+              session,
+              userText
+            );
+
+            return;
+          }
+
+          if (classification === "QUESTION") {
+            await answerFreeformQuestion(
+              from,
+              userText
+            );
+
+            await sendStopList(
+              from,
+              session.order.day,
+              getStopsForDay(
+                session.order.day
+              )
+            );
+
+            return;
+          }
+
+          await sendWhatsAppMessage(
+            from,
+            "Sorry, I didn't catch a valid stop in that - here are the options again:"
+          );
+
           await sendStopList(
             from,
             session.order.day,
@@ -1091,6 +1490,32 @@ function createWhatsAppRouter({
           quantity <= 20;
 
         if (!validQuantity) {
+          const classification =
+            await classifyUnmatchedInput(
+              userText
+            );
+
+          if (classification === "CANCEL") {
+            await handleCancelRequest(
+              from,
+              session,
+              userText
+            );
+
+            return;
+          }
+
+          if (classification === "QUESTION") {
+            await answerFreeformQuestion(
+              from,
+              userText
+            );
+
+            await sendQuantityList(from);
+
+            return;
+          }
+
           await sendWhatsAppMessage(
             from,
             "Please reply with a number (like 5) or a written number (like \"five\") for how many lunch boxes you'd like (1-20)."
